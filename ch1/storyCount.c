@@ -64,7 +64,7 @@ freetokens(TokenArray *arr)
 int
 issymbol(int c)
 {
-	static char *symbols = ",.:;?!\"()\'\t\n ";
+	static char *symbols = ",.:;?!_\"()\'\t\n ";
 	return c != 0 && strchr(symbols, c) != nil;
 }
 
@@ -126,20 +126,55 @@ parser(char *text, TokenArray *arr)
 void
 main(int, char* [])
 {
-	char *text = "Hello, world! This is a test--with some symbols and numbers 123.";
-	TokenArray tokens;
-	inittokens(&tokens);
-	parser(text, &tokens);
+  int fd;
+  int i;
+  char *filedata;
+  long n;
+  Dir *d;
+  char *filename = "the-verdict.txt";
+  d = dirstat(filename);
+  if (d == nil) {
+    print("could not stat file '%s': %r\n", filename);
+    exits("file error");
+  }
+  // Allocate memory for file content (+1 for null terminator)
+  filedata = malloc(d->length + 1);
+  if (filedata == nil) {
+    print("malloc failed: %r\n", filename);
+    free(d);
+    exits("memory error");
+  }
+  free(d);
+  // Open file for reading
+  fd = open(filename, OREAD);
+  if (fd < 0) {
+    print("could not open file '%s': %r\n", filename);
+    free(filedata);
+    exits("file error");
+  }
+  // Read the entire file into the buffer
+  n = read(fd, filedata, d->length);
+  if (n < 0) {
+    print("error reading file '%s': %r\n", filename);
+    free(filedata);
+    close(fd);
+    exits("read error");
+  }
+  filedata[n] = '\0'; // Null-terminate the buffer
+  close(fd);
 
-	// Print the contents of the token array
-	print("--- Token Array ---\n");
-	int i;
-	for (i = 0; i < tokens.size; i++) {
-		print("token[%d]: \"%s\"\n", i, tokens.tokens[i]);
-	}
-	print("-------------------\n");
+  TokenArray tokens;
+  inittokens(&tokens);
+  parser(filedata, &tokens);
 
-	freetokens(&tokens);
+  // Print the contents of the token array
+  print("--- Token Array ---\n");
 
-	exits(nil);
+  for (i = 0; i < tokens.size; i++) {
+    print("token[%d]: \"%s\"\n", i, tokens.tokens[i]);
+  }
+  print("-------------------\n");
+
+  freetokens(&tokens);
+  exits(nil);
 }

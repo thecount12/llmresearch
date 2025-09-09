@@ -36,7 +36,7 @@ main(int argc, char **argv)
   else if ((fd = open(argv[1], OREAD)) < 0)
     perror(argv[1]);
   read(fd, buf, 256);
-  // print("input file: %s\n", buf);  // testing
+  // print("input file: %s\en", buf);  // testing
   print("----\n");
   for (i = 0; i < 99; i++) {
     print("%c", buf[i]);
@@ -50,6 +50,7 @@ Compile:
 .P1
 6c -FVw verdict.c
 6l -o verdict verdict.6
+.P2
 .LP
 Results:
 .P1 
@@ -86,8 +87,10 @@ main(int, char* [])
 .P2
 .LP
 Compile:
+.P1
 ; 6c -FVw word_split.c
 ; 6l -o wordsplit word_split.6
+.P2
 .LP
 Results:
 .P1
@@ -166,6 +169,292 @@ Results:
 wordsplit
 ['Hello', ',', 'world', '.', 'This', ',', 'is', 'a', 'test', '.']
 .P2
-.LP
+.PP
 As you can seee this is extra work to display the proper results for visualization. A
-case block could prove useful. 
+case block could prove useful by tricky. A structure with a dynamic array would probably be better. Let's take a look
+at that example. 
+.P1
+; touch wordSplit.c
+
+#include <u.h>
+#include <libc.h>
+#include <ctype.h>
+
+typedef struct TokenArray {
+	char **tokens;
+	int size;
+	int capacity;
+} TokenArray;
+
+void
+inittokens(TokenArray *arr)
+{
+	arr->size = 0;
+	print("arr size: %d\n", arr->size);
+	arr->capacity = 16; // Initial capacity
+	print("capacity: %d\n", arr->capacity);
+	arr->tokens = malloc(arr->capacity * sizeof(char*));
+	print("tokens memory: %p\n", arr->tokens);
+	if (arr->tokens == nil) {
+		sysfatal("malloc failed");
+	}
+}
+
+// Doubles the capacity of the token array.
+void
+growtokens(TokenArray *arr)
+{
+	char **new_tokens;
+	arr->capacity *= 2;
+	new_tokens = realloc(arr->tokens, arr->capacity * sizeof(char*));
+	if (new_tokens == nil) {
+		sysfatal("realloc failed");
+	}
+	arr->tokens = new_tokens;
+}
+
+// Adds a new token (word or symbol) to the array.
+void
+addtoken(TokenArray *arr, char *token)
+{
+	if (arr->size >= arr->capacity) {
+		growtokens(arr);
+	}
+	arr->tokens[arr->size] = strdup(token);
+	if (arr->tokens[arr->size] == nil) {
+		sysfatal("strdup failed");
+	}
+	arr->size++;
+}
+
+// Frees all memory allocated for the token array.
+void
+freetokens(TokenArray *arr)
+{
+	int i;
+	for (i = 0; i < arr->size; i++) {
+		free(arr->tokens[i]);
+	}
+	free(arr->tokens);
+}
+
+// Checks if a character is a symbol
+int
+issymbol(int c)
+{
+	static char *symbols = ",.:;?!\"()\'\t\n ";
+	return c != 0 && strchr(symbols, c) != nil;
+}
+
+void
+parser(char *text, TokenArray *arr)
+{
+	char *start;
+	char *end;
+	char token_buffer[1024]; // Temporary buffer for tokens\
+
+	start = text;
+	while (*start != '\0') {
+		// Skip leading whitespace
+		while (isspace(*start)) {
+			print("hit space:::\n");
+			start++;
+		}
+		if (*start == '\0') {
+			break;
+		}
+		// Handle the special two-character symbol '--'
+		if (*start == '-' && *(start + 1) == '-') {
+			addtoken(arr, "--");
+			print("added --\n");
+			print("and start is: %d\n", *start);
+			start += 2;
+			continue;
+		}
+		// Handle single-character symbols
+		if (issymbol(*start)) {
+			token_buffer[0] = *start;
+			token_buffer[1] = '\0';
+			addtoken(arr, token_buffer);
+			print("added character:\n");
+			start++;
+			continue;
+		}
+		// Handle words
+		end = start;
+		while (*end != '\0' && !isspace(*end) && !issymbol(*end) 
+			&& !(*end == '-' && *(end + 1) == '-')) {
+			end++;
+		}
+
+		if (end > start) {
+			long word_len = end - start;
+			if (word_len < sizeof(token_buffer)) {
+				strncpy(token_buffer, start, word_len);
+				token_buffer[word_len] = '\0';
+				addtoken(arr, token_buffer);
+			} else {
+				// Handle very long words if needed, though unlikely for this example
+			}
+		}
+		start = end;
+	}
+	
+}
+
+void
+main(int, char* [])
+{
+	char *text = "Hello, world! This is a test--with some symbols and numbers 123.";
+	TokenArray tokens;
+	inittokens(&tokens);
+	parser(text, &tokens);
+
+	// Print the contents of the token array
+	print("--- Token Array ---\n");
+	int i;
+	for (i = 0; i < tokens.size; i++) {
+		print("token[%d]: \"%s\"\n", i, tokens.tokens[i]);
+	}
+	print("-------------------\n");
+
+	freetokens(&tokens);
+
+	exits(nil);
+}
+.P2
+.LP
+Compile:
+.P1
+;6c -FVw wordSplit.c
+;6l -o split2 wordSplit.6
+.P2
+Results:
+.P1
+; split2
+arr size: 0
+capacity: 16
+tokens memory: 4018e8
+added character:
+hit space:::
+added character:
+hit space:::
+hit space:::
+hit space:::
+hit space:::
+added --
+and start is: 45
+hit space:::
+hit space:::
+hit space:::
+hit space:::
+hit space:::
+added character:
+--- Token Array ---
+token[0]: "Hello"
+token[1]: ","
+token[2]: "world"
+token[3]: "!"
+token[4]: "This"
+token[5]: "is"
+token[6]: "a"
+token[7]: "test"
+token[8]: "--"
+token[9]: "with"
+token[10]: "some"
+token[11]: "symbols"
+token[12]: "and"
+token[13]: "numbers"
+token[14]: "123"
+token[15]: "."
+.P2
+.PP
+This example is considerably more code and extra functions to handle the work load but scales considerably. Now let's 
+re-open and process the whole file. 
+.P1
+; storyCount.c
+
+void
+main(int, char* [])
+{
+  int fd;
+  int i;
+  char *filedata;
+  long n;
+  Dir *d;
+  char *filename = "the-verdict.txt";
+  d = dirstat(filename);
+  if (d == nil) {
+    print("could not stat file '%s': %r\en", filename);
+    exits("file error");
+  }
+  // Allocate memory for file content (+1 for null terminator)
+  filedata = malloc(d->length + 1);
+  if (filedata == nil) {
+    print("malloc failed: %r\en", filename);
+    free(d);
+    exits("memory error");
+  }
+  free(d);
+  // Open file for reading
+  fd = open(filename, OREAD);
+  if (fd < 0) {
+    print("could not open file '%s': %r\en", filename);
+    free(filedata);
+    exits("file error");
+  }
+  // Read the entire file into the buffer
+  n = read(fd, filedata, d->length);
+  if (n < 0) {
+    print("error reading file '%s': %r\en", filename);
+    free(filedata);
+    close(fd);
+    exits("read error");
+  }
+  filedata[n] = '\0'; // Null-terminate the buffer
+  close(fd);
+
+  TokenArray tokens;
+  inittokens(&tokens);
+  parser(filedata, &tokens);
+
+  // Print the contents of the token array
+  print("--- Token Array ---\en");
+
+  for (i = 0; i < tokens.size; i++) {
+    print("token[%d]: \"%s\"\en", i, tokens.tokens[i]);
+  }
+  print("-------------------\en");
+
+  freetokens(&tokens);
+  exits(nil);
+}
+.P2
+.LP
+I did forget to add a symbol "_" so you will need to edit issymbol() function. 
+.P1
+issymbol(int c)
+{
+	static char *symbols = ",.:;?!_\e"()\e'\et\en ";
+	return c != 0 && strchr(symbols, c) != nil;
+}
+.P2
+.LP
+Compile:
+.P1
+; 6c -FVw wordCount.c
+; 6l -o count wordCount.6
+.P2
+Results:
+.P1
+token[4683]: "exterminating"
+token[4684]: "our"
+token[4685]: "kind"
+token[4686]: "of"
+token[4687]: "art"
+token[4688]: "."
+token[4689]: """
+-------------------
+.P2
+.LP
+asdf
