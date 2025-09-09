@@ -1,0 +1,133 @@
+A word and symbol parser in Plan 9 C can be implemented by iterating through a string and manually checking each character. Unlike Python's re.split, Plan 9's libc does not include a regular expression library for this purpose. Instead, you must write code to handle each case: identifying sequences of alphanumeric characters as "words" and treating all specified punctuation characters as individual tokens. 
+The following example code defines a set of symbols and then steps through an input string. It prints out each word and symbol as it is found, handling sequences of letters and digits as a single word. 
+C code example
+c
+#include <u.h>
+#include <libc.h>
+#include <ctype.h>
+
+/*
+ * This function prints a token to standard output, adding newlines for clarity.
+ */
+void
+printtoken(char *label, char *token)
+{
+	if (token == nil) {
+		return;
+	}
+	print("%s: \"%s\"\n", label, token);
+}
+
+/*
+ * Checks if a character is one of the designated symbol separators.
+ */
+int
+issymbol(int c)
+{
+	static char *symbols = ",.:;?!\"()\'\t\n ";
+	return c != 0 && strchr(symbols, c) != nil;
+}
+
+/*
+ * The main parsing function.
+ * It iterates through the input string, identifies words and symbols,
+ * and prints them as tokens.
+ */
+void
+parser(char *text)
+{
+	char *start;
+	char *end;
+
+	start = text;
+	while (*start != '\0') {
+		// Skip leading whitespace
+		while (isspace(*start)) {
+			start++;
+		}
+		if (*start == '\0') {
+			break;
+		}
+		
+		// If the character is a symbol, print it and move on.
+		if (issymbol(*start)) {
+			char symbol[2];
+			symbol[0] = *start;
+			symbol[1] = '\0';
+			printtoken("symbol", symbol);
+			start++;
+			continue;
+		}
+
+		// Check for the special two-character symbol '--'
+		if (*start == '-' && *(start + 1) == '-') {
+			printtoken("symbol", "--");
+			start += 2;
+			continue;
+		}
+
+		// Otherwise, it must be a word. Find the end of the word.
+		end = start;
+		while (*end != '\0' && !isspace(*end) && !issymbol(*end) && !(*end == '-' && *(end + 1) == '-')) {
+			end++;
+		}
+
+		if (end > start) {
+			char *word = malloc(end - start + 1);
+			if (word == nil) {
+				sysfatal("malloc failed");
+			}
+			strncpy(word, start, end - start);
+			word[end - start] = '\0';
+			printtoken("word", word);
+			free(word);
+		}
+		start = end;
+	}
+}
+
+void
+main(int argc, char *argv[])
+{
+	char *text = "Hello, world! This is a test--with some symbols and numbers 123.";
+
+	parser(text);
+	exits(nil);
+}
+Use code with caution.
+
+Explanation of the code
+Headers: u.h and libc.h are standard Plan 9 libraries. ctype.h is included for the isspace function, which checks for whitespace characters.
+issymbol(): This helper function takes a character and checks if it is one of the designated single-character separators defined in the symbols string.
+parser(): This is the core logic.
+It uses two pointers, start and end, to keep track of the current token.
+The outer while loop continues until the end of the input string is reached.
+It first skips any whitespace.
+It then checks for single-character symbols using issymbol().
+A separate check is included for the two-character symbol "--".
+If the current character is not a symbol, the code assumes it is the start of a word. The inner while loop advances end until it finds the next symbol, whitespace, or the special "--" symbol, defining the boundary of the word.
+The strncpy() function is used to copy the identified word into a newly allocated string, which is then printed and freed.
+main(): The main function initializes a sample string and calls the parser function.
+exits(nil): In Plan 9, the program should call exits to terminate. A nil argument indicates successful termination. 
+How to compile and run
+Save the code as parser.c.
+Compile it using the Plan 9 toolchain (e.g., 8c and 8l on x86, or 6c and 6l on AMD64).
+sh
+# Assuming x86 architecture
+8c parser.c
+8l -o parser parser.8
+
+--- Word List ---
+word: "Hello"
+word: "world"
+word: "This"
+word: "is"
+word: "a"
+word: "test"
+word: "with"
+word: "some"
+word: "symbols"
+word: "and"
+word: "numbers"
+word: "123"
+-----------------

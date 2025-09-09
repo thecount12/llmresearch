@@ -1,0 +1,144 @@
+This Plan 9 C example illustrates:
+Standard Plan 9 headers u.h and libc.h.
+String manipulation using str* functions instead of malloc/free and char* juggling.
+Simple print calls for output.
+The use of exits(nil) instead of return 0 to indicate success.
+An example of creating a Plan 9 mkfile for compilation and linking. 
+Plan 9 C code
+Since there is no tiktoken library to link against, the core functionality is replaced with placeholder functions (tiktoken_encode, tiktoken_decode). The overall structure follows the Plan 9 style.
+tiktoken-plan9.c
+c
+#include <u.h>
+#include <libc.h>
+
+/*
+ * Placeholder structure for a Plan 9 BPE encoder.
+ * In a real implementation, this would contain the merge rules.
+ */
+typedef struct Tiktoken_Encoding {
+	char *model;
+} Tiktoken_Encoding;
+
+/*
+ * This is a placeholder for a real BPE encoding function.
+ * It would implement the BPE algorithm.
+ * The `tokens` array would need to be allocated using `malloc`.
+ */
+int*
+tiktoken_encode(Tiktoken_Encoding *encoding, char *text, size_t *count)
+{
+	int *tokens;
+
+	USED(encoding); /* Avoid "not used" warning for placeholder */
+	
+	/*
+	 * In a real implementation, the function would convert the string
+	 * into a sequence of token IDs based on the model's BPE rules.
+	 * For this example, a hardcoded sequence is returned.
+	 */
+	*count = 4;
+	tokens = malloc(*count * sizeof(int));
+	if (tokens == nil) {
+		sysfatal("malloc failed");
+	}
+	tokens[0] = 15456;
+	tokens[1] = 11;
+	tokens[2] = 23;
+	tokens[3] = 1917;
+
+	return tokens;
+}
+
+/*
+ * Placeholder for a real BPE decoding function.
+ * This would reverse the tokenization process.
+ */
+char*
+tiktoken_decode(Tiktoken_Encoding *encoding, int *tokens, size_t count)
+{
+	char *decoded_text;
+
+	USED(encoding); /* Avoid "not used" warning for placeholder */
+	
+	/*
+	 * In a real implementation, the function would convert a sequence
+	 * of token IDs back into a string.
+	 * For this example, a hardcoded string is returned.
+	 */
+	USED(tokens); /* Avoid "not used" warning for placeholder */
+	USED(count); /* Avoid "not used" warning for placeholder */
+
+	decoded_text = strdup("Hello, world! (from Plan 9 C)");
+	if (decoded_text == nil) {
+		sysfatal("strdup failed");
+	}
+	
+	return decoded_text;
+}
+
+/*
+ * Frees the encoding structure.
+ */
+void
+tiktoken_free_encoding(Tiktoken_Encoding *encoding)
+{
+	free(encoding);
+}
+
+void
+main(int argc, char *argv[])
+{
+	Tiktoken_Encoding *encoding;
+	char *text_to_encode;
+	size_t tokens_count;
+	int *tokens;
+	char *decoded_text;
+	int i;
+
+	USED(argc); /* Not used in this example */
+	USED(argv); /* Not used in this example */
+	
+	encoding = malloc(sizeof(Tiktoken_Encoding));
+	if (encoding == nil) {
+		sysfatal("malloc failed");
+	}
+	encoding->model = "cl100k_base";
+	
+	text_to_encode = "Hello, world! This is a test.";
+	print("Original text: \"%s\"\n", text_to_encode);
+
+	tokens = tiktoken_encode(encoding, text_to_encode, &tokens_count);
+	
+	print("Encoded tokens (%d): [", tokens_count);
+	for (i = 0; i < tokens_count; i++) {
+		print("%d%s", tokens[i], (i == tokens_count - 1) ? "" : ", ");
+	}
+	print("]\n");
+
+	decoded_text = tiktoken_decode(encoding, tokens, tokens_count);
+
+	print("Decoded text: \"%s\"\n", decoded_text);
+
+	free(tokens);
+	free(decoded_text);
+	tiktoken_free_encoding(encoding);
+
+	exits(nil);
+}
+
+Use code with caution.
+
+Plan 9 mkfile
+To compile and link the Plan 9 C program, a mkfile is used instead of gcc. This file specifies the object file (.8 for x86) and the final executable (8.out). 
+mkfile
+mk
+8c=8c
+8l=8l
+
+all: 8.out
+
+8.out: tiktoken-plan9.8
+	$(8l) -o $@ tiktoken-plan9.8
+
+tiktoken-plan9.8: tiktoken-plan9.c
+	$(8c) tiktoken-plan9.c
