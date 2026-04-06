@@ -1,0 +1,19 @@
+// analyze tokens in verdict.txt
+// total characters 20479
+
+var fileName = "the-verdict.txt";
+
+fun fileOpen(file) {
+	var f = fileExists(file);
+	if (f) {
+		var data = readFile(file);
+		return data;
+	} else {
+		return "File not found: " + file;
+	}
+}
+
+var res = fileOpen(fileName);
+print "The number of character: " + len(res);
+var sample = strSlice(res, 0, 99);
+print sample;

@@ -1,0 +1,190 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <time.h> // For seeding the random number generator
+
+// Define a structure for GPT-2 model parameters
+typedef struct {
+    float* params_memory; // Pointer to the memory for model parameters
+    float* grads_memory;  // Pointer to the memory for gradients
+    float* m_memory;      // Pointer to the memory for moving parameters (for Adam)
+    float* v_memory;      // Pointer to the memory for variance parameters (for Adam)
+    float* acts_memory;   // Pointer to the memory for activations
+    float* grads_acts_memory;// Pointer to the memory for gradients of activations
+    int* inputs;          // Pointer to the input data
+    int* targets;         // Pointer to the target data
+    int config;           // Model configuration (e.g., vocab size, hidden size)
+} GPT2;
+
+// Define a structure for DataLoader (for efficient data loading)
+typedef struct {
+    int num_tokens;      // Total number of tokens in the dataset
+    int* inputs;         // Pointer to input data
+    int* targets;        // Pointer to target data
+    int batch_size;      // Batch size for training/evaluation
+    int sequence_length; // Sequence length (number of tokens in each sequence)
+    int is_val;          // Flag indicating whether it's a validation dataset
+} DataLoader;
+
+// Define a structure for Tokenizer (for converting tokens to indices and vice versa)
+typedef struct {
+    int vocab_size;      // Size of the vocabulary
+    int* token_to_id;   // Mapping from tokens to indices
+    int* id_to_token;   // Mapping from indices to tokens
+    int init_ok;         // Flag indicating whether the tokenizer is initialized
+} Tokenizer;
+
+// Function to initialize a DataLoader
+void dataloader_init(DataLoader* loader, const char* filename, int batch_size, int sequence_length, int is_val, int mode, int padding_mode) {
+    loader->batch_size = batch_size;
+    loader->sequence_length = sequence_length;
+    loader->is_val = is_val;
+
+    // Allocate memory for input and target data
+    loader->inputs = (int*)malloc(loader->batch_size * loader->sequence_length * sizeof(int));
+    loader->targets = (int*)malloc(loader->batch_size * loader->sequence_length * sizeof(int));
+
+    // Load data from file
+    FILE* fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        printf("Error opening file %s\n", filename);
+        exit(1);
+    }
+
+    // Read data from file (implementation omitted for brevity)
+    // ... Implement file reading logic here ...
+
+    fclose(fp);
+}
+
+// Function to reset a DataLoader (for starting a new epoch)
+void dataloader_reset(DataLoader* loader) {
+    // Reset data pointers (implementation omitted for brevity)
+}
+
+// Function to get the next batch of data from a DataLoader
+void dataloader_next_batch(DataLoader* loader) {
+    // Get the next batch of data (implementation omitted for brevity)
+}
+
+// Function to free a DataLoader
+void dataloader_free(DataLoader* loader) {
+    if (loader->inputs != NULL) free(loader->inputs);
+    if (loader->targets != NULL) free(loader->targets);
+}
+
+// Function to initialize a Tokenizer
+void tokenizer_init(Tokenizer* tokenizer, const char* filename) {
+    // Initialize the Tokenizer (implementation omitted for brevity)
+}
+
+// Function to free a Tokenizer
+void tokenizer_free(Tokenizer* tokenizer) {
+    // Free the memory allocated for the Tokenizer (implementation omitted for brevity)
+}
+
+// Function to free a GPT-2 model
+void gpt2_free(GPT2* model) {
+    if (model) {
+        free(model->params_memory);
+        free(model->grads_memory);
+        free(model->m_memory);
+        free(model->v_memory);
+        free(model->acts_memory);
+        free(model->grads_acts_memory);
+        free(model->inputs);
+        free(model->targets);
+    }
+}
+
+// Function to build a GPT-2 model from a checkpoint (implementation omitted for brevity)
+void gpt2_build_from_checkpoint(GPT2* model, const char* checkpoint_filename) {
+    // Build the GPT-2 model from a checkpoint file (implementation omitted for brevity)
+}
+
+// Function to perform a forward pass through the GPT-2 model (implementation omitted for brevity)
+void gpt2_forward(GPT2* model, int* inputs, int* targets, int batch_size, int sequence_length) {
+    // Perform a forward pass through the GPT-2 model (implementation omitted for brevity)
+}
+
+// Function to zero the gradients of the GPT-2 model (implementation omitted for brevity)
+void gpt2_zero_grad(GPT2* model) {
+    // Zero the gradients of the GPT-2 model (implementation omitted for brevity)
+}
+
+// Function to perform a backward pass through the GPT-2 model (implementation omitted for brevity)
+void gpt2_backward(GPT2* model) {
+    // Perform a backward pass through the GPT-2 model (implementation omitted for brevity)
+}
+
+// Function to update the parameters of the GPT-2 model (implementation omitted for brevity)
+void gpt2_update(GPT2* model, float learning_rate, float weight_decay, float beta1, float beta2, float epsilon, int step) {
+    // Update the parameters of the GPT-2 model (implementation omitted for brevity)
+}
+
+// Function to generate a random 32-bit unsigned integer
+unsigned int random_u32(uint64_t* state) {
+    *state ^= *state >> 12;
+    *state ^= *state << 25;
+    *state ^= *state >> 27;
+    return (*state * 0x2545F4914F6CDD1Dull) >> 32;
+}
+
+// Function to generate a random 32-bit float in the range [0, 1)
+float random_f32(uint64_t* state) {
+    return (random_u32(state) >> 8) / 16777216.0f;
+}
+
+// Function to sample an index from a probability distribution
+int sample_mult(float* probabilities, int n, float coin) {
+    float cdf = 0.0f;
+    for (int i = 0; i < n; i++) {
+        cdf += probabilities[i];
+        if (coin < cdf) {
+            return i;
+        }
+    }
+    return n - 1; // in case of rounding errors
+}
+
+// Function to safely print a string to standard output
+void safe_printf(const char* str) {
+    if (str == NULL) return;
+    fputs(str, stdout);
+}
+
+// Function to get the current time in seconds
+void clock_gettime(struct timespec *ts) {
+    clock_gettime(CLOCK_MONOTONIC, ts);
+}
+
+// Function to print a formatted string (similar to printf)
+void printf(const char* format, ...) {
+    va_list ap;
+    va_start(ap, format);
+    vprintf(format, ap);
+    va_end(ap);
+}
+
+// Function to allocate memory using malloc (with error checking)
+void* mallocCheck(size_t size) {
+    void* ptr = malloc(size);
+    if (ptr == NULL) {
+        perror("malloc failed");
+        exit(1); // Or handle the error appropriately
+    }
+    return ptr;
+}
+
+// Function to free memory allocated with malloc (with error checking)
+void free(void* ptr) {
+    if (ptr != NULL) {
+        free(ptr);
+    }
+}
+
+// Example main function (for testing)
+int main() {
+    printf("Hello, Plan9 C!\n");
+    return 0;
+}

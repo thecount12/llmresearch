@@ -1,0 +1,54 @@
+// example of split words into array
+// had to add my own parenthesis for readiblity
+
+//var text = "Hello, world. This, is a test.";
+var fileName = "the-verdict.txt";
+
+fun fileOpen(file) {
+	var f = fileExists(file);
+	if (f) {
+		var data = readFile(file);
+		return data;
+	} else {
+		return "File not found: " + file;
+	}
+}
+
+var text = fileOpen(fileName);
+print len(text);
+
+
+var arr = strSplit(text, " ");
+var newArray = [];
+
+fun append(array, val) {
+	return array + [val];
+}
+
+fun parse(str, symbol) { // "," or "." 
+	var place = str;
+	var val = strFind(place, symbol);
+	newArray = append(newArray, "'" + strSlice(place, 0, val) + "'");
+	newArray = append(newArray, "'" + place[val] + "'");
+	
+}
+
+for (var i = 0; i < arr.length; i = i + 1) {
+	if (strFind(arr[i], ",") != -1) {
+		parse(arr[i], ",");
+	} else if (strFind(arr[i], ".") != -1) {
+		parse(arr[i], ".");
+	} else if (strFind(arr[i], ";") != -1) {
+		parse(arr[i], ";");
+	} else if (strFind(arr[i], ":") != -1) {
+		parse(arr[i], ":");
+	} else if (strFind(arr[i], "?") != -1) {
+		parse(arr[i], "?");
+	} else if (strFind(arr[i], "_") != -1) {
+		parse(arr[i], "_");
+	} else {
+		newArray = append(newArray, "'" + arr[i] + "'" );
+	}
+}
+//print newArray;
+print newArray.length;

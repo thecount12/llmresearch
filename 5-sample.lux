@@ -1,0 +1,90 @@
+// example of split words into array
+// had to add my own parenthesis for readiblity
+
+//var text = "Hello, world. This, is a test.";
+var fileName = "the-verdict.txt";
+
+fun fileOpen(file) {
+	var f = fileExists(file);
+	if (f) {
+		var data = readFile(file);
+		return data;
+	} else {
+		return "File not found: " + file;
+	}
+}
+
+var text = fileOpen(fileName);
+print len(text);
+
+
+var arr = strSplit(text, " ");
+var newArray = [];
+
+fun append(array, val) {
+	return array + [val];
+}
+
+fun parse(str, symbol) { // "," or "." 
+	var place = str;
+	var val = strFind(place, symbol);
+	// pprint
+	//newArray = append(newArray, "'" + strSlice(place, 0, val) + "'");
+	//newArray = append(newArray, "'" + place[val] + "'");
+	// raw input
+	newArray = append(newArray, strSlice(place, 0, val));
+	newArray = append(newArray, place[val]);
+}
+
+for (var i = 0; i < arr.length; i = i + 1) {
+	if (strFind(arr[i], ",") != -1) {
+		parse(arr[i], ",");
+	} else if (strFind(arr[i], ".") != -1) {
+		parse(arr[i], ".");
+	} else if (strFind(arr[i], ";") != -1) {
+		parse(arr[i], ";");
+	} else if (strFind(arr[i], ":") != -1) {
+		parse(arr[i], ":");
+	} else if (strFind(arr[i], "?") != -1) {
+		parse(arr[i], "?");
+	} /*else if (strFind(arr[i], "_") != -1) {
+		parse(arr[i], "_");
+	} */ else {
+		newArray = append(newArray, "'" + arr[i] + "'" );
+	}
+}
+//print newArray;
+print newArray.length;
+var sortedArray = arraySort(newArray);
+print sortedArray[0] + sortedArray[1] + sortedArray[2];
+
+var set = Dict();
+for (var i = 0; i < sortedArray.length; i = i + 1) {
+	print sortedArray[i];
+	if (i == 40) { // had to put 1k just to verify if i was storing whitespace
+		break;
+	}
+	
+	if (set.has(sortedArray[i])) {
+		print "has";
+	
+	} else {
+		set.put(sortedArray[i], i);
+	}
+}
+
+var entries = set.iter();
+var json = "{";
+var first = 1;
+var i = 0;
+while (i < entries.length) {
+	var entry = entries[i];
+	if (first == 0) { json = json + ","; }
+	first = 0;
+	json = json + "\"" + entry.key + "\";" + entry.value;
+	i = i + 1;
+}
+print "---";
+json = json + "}";
+print json;
+

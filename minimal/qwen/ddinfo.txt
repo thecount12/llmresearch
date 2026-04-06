@@ -1,0 +1,2 @@
+dd -if /dev/random -of data.bin -bs 4096 -count 1
+dd -if /dev/random -of data.bin -bs 32768 -count 1

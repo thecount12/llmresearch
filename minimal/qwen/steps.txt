@@ -1,0 +1,5 @@
+1. gpt_small.c
+2. slim.txt: breakdown of what needs to happen
+3. minimal-gpt.c: which requires dd.info.txt for the correct size
+4. Lets tray to make it learn and not just print. learn-gpt.c
+

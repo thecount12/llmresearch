@@ -254,8 +254,8 @@ void
 main(int, char* [])
 {
 	// small string test
-    //char *textstring = "It's the last he painted, you know, Mrs. Gisburn said with pardonable pride.";
-	char *textstring = "Hello, do you like tea?";
+    char *textstring = "It's the last he painted, you know, Mrs. Gisburn said with pardonable pride.";
+	//char *textstring = "Hello, do you like tea?";
     int fd;
     char *filename = "the-verdict.txt";
     char *filedata;
@@ -267,7 +267,7 @@ main(int, char* [])
     TokenArray *ids;
     char *decoded_text;
     int i;
-// comment out for :small string test
+// comment block below for :small string test
 /*
     // Read file and parse tokens
     d = dirstat(filename);
@@ -297,8 +297,8 @@ main(int, char* [])
     }
     filedata[n] = '\0';
     close(fd);
-*/ 
-// small string test end
+*/
+// small string test: comment block above end
 
     // Get all unique tokens to build the vocabulary
     inittokens(&all_tokens);

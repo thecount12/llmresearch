@@ -1,0 +1,7 @@
+// example of split words into array
+// this command does not put the whitespace alone into an array. It only does
+// I would use a lower level language to do that work. 
+
+var text = "Hello, world. This, is a test.";
+var arr = strSplit(text, " ");
+print arr;
