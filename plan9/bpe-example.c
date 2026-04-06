@@ -1,5 +1,6 @@
 #include <u.h>
 #include <libc.h>
+#include <bio.h>
 
 
 typedef struct {
@@ -103,6 +104,17 @@ split_bytes(char *s)
   return sl;
 }
 
+int main()
+{
+	Merge *merges;
+	int merges_n; 
+	merges = load_merges("merges.txt", &merges_n);
+	int tcount;
+
+	char **toks = bpe_encode_word("hello", merges, merges_n, &tcount);
+
+	return 0;
+}
 /* Example usage:
    Merge *merges; int merges_n;
    merges = load_merges("merges.txt", &merges_n);
