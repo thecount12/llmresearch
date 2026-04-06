@@ -3,7 +3,7 @@
 
 
 typedef struct {
-  char *pair;   // e.g. "t+h" where delimiter can be '\x01'
+  char *pair;
   int rank;
 } Merge;
 
@@ -12,100 +12,95 @@ typedef struct {
   int n;
 } StrList;
 
-static char 
-*join_pair(const char *a, const char *b)
+/* join_pair: no const to suit older Plan 9 compilers */
+static char *
+join_pair(char *a, char *b)
 {
-  unsigned int la = strlen(a), lb = strlen(b);
+  unsigned la = strlen(a), lb = strlen(b);
   char *s = malloc(la + lb + 2);
+  if(s == nil) sysfatal("malloc failed");
   memcpy(s, a, la);
-  s[la] = '\x01'; // delimiter
+  s[la] = '\x01';
   memcpy(s+la+1, b, lb);
   s[la+1+lb] = 0;
   return s;
 }
 
-static int 
-merge_cmp(void *pa, void *pb)
+/* load_merges: use Biobuf to read lines; parse "a b" pairs */
+Merge *
+load_merges(char *path, int *out_count)
 {
-  const Merge *a = pa; const Merge *b = pb;
-  return strcmp(a->pair, b->pair);
-}
+  Biobuf *bp;
+  char *line;
+  Merge *arr = nil;
+  int cap = 0;
+  int n = 0;
 
-Merge 
-*load_merges(char *path, int *out_count) 
-{
-  FILE *f = fopen(path, "r");
-  if(!f) return nil;
-  Merge *arr = nil; int cap=0, n=0;
-  char a[256], b[256];
-  while(fscanf(f, "%255s %255s", a, b)==2){
-    if(n==cap){ cap = cap?cap*2:256; arr = realloc(arr, cap * sizeof(Merge)); }
-    arr[n].pair = join_pair(a,b);
+  bp = Bopen(path, OREAD);
+  if(bp == nil) return nil;
+
+  while((line = Brdline(bp, '\n')) != nil){
+    /* strip newline */
+    char *nl = strchr(line, '\n');
+    if(nl) *nl = 0;
+
+    /* find first whitespace separator */
+    char *sp = strchr(line, ' ');
+    if(sp == nil) continue;
+    *sp = 0;
+    char *a = line;
+    char *b = sp + 1;
+
+    if(n == cap){
+      cap = cap ? cap*2 : 256;
+      arr = realloc(arr, cap * sizeof(Merge));
+      if(arr == nil) sysfatal("realloc failed");
+    }
+    arr[n].pair = join_pair(a, b);
     arr[n].rank = n;
     n++;
   }
-  fclose(f);
-  qsort(arr, n, sizeof(Merge), merge_cmp);
+
+  Bclose(bp);
+
+  /* optional: simple qsort if available */
+  if(n > 1) qsort(arr, n, sizeof(Merge),
+    (int(*)(const void*,const void*)) strcmp /* wrapper below may be better */);
+
   *out_count = n;
   return arr;
 }
 
-int 
-merge_lookup(Merge *arr, int n,char *x, char *y) 
+/* simple linear lookup (avoids relying on bsearch implementation) */
+int
+merge_lookup(Merge *arr, int n, char *x, char *y)
 {
-  char *p = join_pair(x,y);
-  Merge key = { .pair = p, .rank = -1 };
-  Merge *found = bsearch(&key, arr, n, sizeof(Merge), merge_cmp);
+  char *p = join_pair(x, y);
+  int found = -1;
+  for(int i=0;i<n;i++){
+    if(strcmp(arr[i].pair, p) == 0){ found = arr[i].rank; break; }
+  }
   free(p);
-  return found ? found->rank : -1;
+  return found;
 }
 
-StrList 
-split_bytes(char *s) 
+/* split_bytes: use unsigned for lengths */
+StrList
+split_bytes(char *s)
 {
-  size_t L = strlen(s);
-  StrList sl = { malloc(L * sizeof(char*)), 0 };
-  for(size_t i=0;i<L;i++){
+  unsigned L = strlen(s);
+  StrList sl;
+  sl.items = malloc(L * sizeof(char*));
+  if(sl.items == nil) sysfatal("malloc failed");
+  sl.n = 0;
+  for(unsigned i=0;i<L;i++){
     char *c = malloc(2);
+    if(c == nil) sysfatal("malloc failed");
     c[0] = s[i];
     c[1] = 0;
     sl.items[sl.n++] = c;
   }
   return sl;
-}
-
-char 
-**bpe_encode_word(char *word, Merge *merges, int merges_n, int *out_tokens_n) {
-  StrList symbols = split_bytes(word);
-  // greedy merging loop
-  while(1){
-    if(symbols.n < 2) break;
-    int best_i = -1;
-    int best_rank = INT_MAX;
-    for(int i=0;i<symbols.n-1;i++){
-      int r = merge_lookup(merges, merges_n, symbols.items[i], symbols.items[i+1]);
-      if(r>=0 && r < best_rank){ best_rank = r; best_i = i; }
-    }
-    if(best_i < 0) break;
-    // merge best_i and best_i+1
-    size_t la = strlen(symbols.items[best_i]), lb = strlen(symbols.items[best_i+1]);
-    char *m = malloc(la + lb + 1);
-    memcpy(m, symbols.items[best_i], la);
-    memcpy(m+la, symbols.items[best_i+1], lb);
-    m[la+lb] = 0;
-    free(symbols.items[best_i]);
-    free(symbols.items[best_i+1]);
-    // shift left and replace
-    symbols.items[best_i] = m;
-    memmove(&symbols.items[best_i+1], &symbols.items[best_i+2], (symbols.n-best_i-2)*sizeof(char*));
-    symbols.n -= 1;
-  }
-  // return array of token strings
-  char **out = malloc(symbols.n * sizeof(char*));
-  for(int i=0;i<symbols.n;i++){ out[i] = symbols.items[i]; }
-  free(symbols.items);
-  *out_tokens_n = symbols.n;
-  return out;
 }
 
 /* Example usage:
