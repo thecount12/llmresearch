@@ -1,6 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <u.h>
+#include <libc.h>
+
 
 typedef struct {
   char *pair;   // e.g. "t+h" where delimiter can be '\x01'
@@ -12,8 +12,10 @@ typedef struct {
   int n;
 } StrList;
 
-static char *join_pair(const char *a, const char *b) {
-  size_t la = strlen(a), lb = strlen(b);
+static char 
+*join_pair(const char *a, const char *b)
+{
+  unsigned int la = strlen(a), lb = strlen(b);
   char *s = malloc(la + lb + 2);
   memcpy(s, a, la);
   s[la] = '\x01'; // delimiter
@@ -22,15 +24,19 @@ static char *join_pair(const char *a, const char *b) {
   return s;
 }
 
-static int merge_cmp(const void *pa, const void *pb){
+static int 
+merge_cmp(void *pa, void *pb)
+{
   const Merge *a = pa; const Merge *b = pb;
   return strcmp(a->pair, b->pair);
 }
 
-Merge *load_merges(const char *path, int *out_count) {
+Merge 
+*load_merges(char *path, int *out_count) 
+{
   FILE *f = fopen(path, "r");
-  if(!f) return NULL;
-  Merge *arr = NULL; int cap=0, n=0;
+  if(!f) return nil;
+  Merge *arr = nil; int cap=0, n=0;
   char a[256], b[256];
   while(fscanf(f, "%255s %255s", a, b)==2){
     if(n==cap){ cap = cap?cap*2:256; arr = realloc(arr, cap * sizeof(Merge)); }
@@ -44,7 +50,9 @@ Merge *load_merges(const char *path, int *out_count) {
   return arr;
 }
 
-int merge_lookup(Merge *arr, int n, const char *x, const char *y) {
+int 
+merge_lookup(Merge *arr, int n,char *x, char *y) 
+{
   char *p = join_pair(x,y);
   Merge key = { .pair = p, .rank = -1 };
   Merge *found = bsearch(&key, arr, n, sizeof(Merge), merge_cmp);
@@ -52,7 +60,9 @@ int merge_lookup(Merge *arr, int n, const char *x, const char *y) {
   return found ? found->rank : -1;
 }
 
-StrList split_bytes(const char *s) {
+StrList 
+split_bytes(char *s) 
+{
   size_t L = strlen(s);
   StrList sl = { malloc(L * sizeof(char*)), 0 };
   for(size_t i=0;i<L;i++){
@@ -64,7 +74,8 @@ StrList split_bytes(const char *s) {
   return sl;
 }
 
-char **bpe_encode_word(const char *word, Merge *merges, int merges_n, int *out_tokens_n) {
+char 
+**bpe_encode_word(char *word, Merge *merges, int merges_n, int *out_tokens_n) {
   StrList symbols = split_bytes(word);
   // greedy merging loop
   while(1){
