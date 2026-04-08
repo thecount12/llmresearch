@@ -38,7 +38,7 @@ main(int argc, char **argv)
 {
 	Model model;
 	RunState state;
-	char err[128];
+	char err[512];
 	char *model_path, *prompt;
 	int steps, pos, i, token, next, promptlen;
 	float temperature;
