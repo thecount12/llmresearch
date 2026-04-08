@@ -197,8 +197,9 @@ u32asf(ulong u)
 static float
 f16tof32(ushort h)
 {
-	ulong x, sign, exp, mant, u;
-	int expi;
+	ulong x, sign, mant, u;
+	ulong exp;
+	int expi, e;
 	float m, scale;
 
 	x = (ulong)h & 0xffff;
@@ -223,7 +224,9 @@ f16tof32(ushort h)
 		}
 		return 0.0f / 0.0f;
 	}
-	exp = (ulong)expi - 15 + 127;
+	/* signed expi-15; (ulong)expi - 15 would underflow when expi < 15 */
+	e = expi - 15 + 127;
+	exp = (ulong)e;
 	u = (sign << 31) | (exp << 23) | (mant << 13);
 	return u32asf(u);
 }
