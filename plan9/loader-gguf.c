@@ -180,43 +180,65 @@ readf64(int fd, double *out)
 }
 
 static float
+u32asf(ulong u)
+{
+	union {
+		ulong u;
+		float f;
+	} x;
+
+	x.u = u;
+	return x.f;
+}
+
+/*
+ * IEEE fp16 -> fp32. Bit path for normals/inf; float path for subnormals (rare for Q scales).
+ */
+static float
 f16tof32(ushort h)
 {
-	int sign, exp, frac;
-	float s, m, scale;
+	ulong x, sign, exp, mant, u;
+	int expi;
+	float m, scale;
 
-	sign = (h >> 15) & 1;
-	exp = (h >> 10) & 0x1f;
-	frac = h & 0x3ff;
-	s = sign ? -1.0f : 1.0f;
+	x = (ulong)h & 0xffff;
+	sign = (x >> 15) & 1;
+	expi = (x >> 10) & 0x1f;
+	mant = x & 0x3ff;
 
-	if(exp == 0){
-		if(frac == 0)
+	if(expi == 0){
+		if(mant == 0)
 			return sign ? -0.0f : 0.0f;
-		m = (float)frac / 1024.0f;
+		m = (float)mant / 1024.0f;
 		scale = 1.0f;
-		exp = 14;
-		while(exp-- > 0)
+		expi = 14;
+		while(expi-- > 0)
 			scale *= 0.5f;
-		return s * m * scale;
+		return (sign ? -1.0f : 1.0f) * m * scale;
 	}
-	if(exp == 0x1f){
-		if(frac == 0)
-			return s * 1.0e30f;
+	if(expi == 31){
+		if(mant == 0){
+			u = (sign << 31) | (0xff << 23);
+			return u32asf(u);
+		}
 		return 0.0f / 0.0f;
 	}
+	exp = (ulong)expi - 15 + 127;
+	u = (sign << 31) | (exp << 23) | (mant << 13);
+	return u32asf(u);
+}
 
-	m = 1.0f + (float)frac / 1024.0f;
-	scale = 1.0f;
-	exp -= 15;
-	if(exp > 0){
-		while(exp-- > 0)
-			scale *= 2.0f;
-	}else if(exp < 0){
-		while(exp++ < 0)
-			scale *= 0.5f;
-	}
-	return s * m * scale;
+static int
+seekabs(int fd, vlong off)
+{
+	vlong r;
+
+	if(seek(fd, off, 0) < 0)
+		return -1;
+	r = seek(fd, 0, 1);
+	if(r < 0 || r != off)
+		return -1;
+	return 0;
 }
 
 static int
@@ -678,7 +700,7 @@ hasrequired(GGUFInfo *gi, GGUFMap *gm)
 static int
 loadf32tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 {
-	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+	if(seekabs(fd, data_base + (vlong)tp->off) < 0)
 		return -1;
 	return readfull9(fd, tp->dst, (int)(tp->count * sizeof(float)));
 }
@@ -689,7 +711,7 @@ loadf16tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 	uvlong i;
 	ushort h;
 
-	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+	if(seekabs(fd, data_base + (vlong)tp->off) < 0)
 		return -1;
 	for(i = 0; i < tp->count; i++){
 		if(readu16(fd, &h) < 0)
@@ -710,7 +732,7 @@ loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp, char *err, int nerr)
 
 	if(tp->count % QK4_0 != 0)
 		return -1;
-	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+	if(seekabs(fd, data_base + (vlong)tp->off) < 0)
 		return -1;
 	blocks = tp->count / QK4_0;
 	for(b = 0; b < blocks; b++){
@@ -719,10 +741,12 @@ loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp, char *err, int nerr)
 		if(readfull9(fd, qs, sizeof qs) < 0)
 			return -1;
 		d = f16tof32(dh);
-		if((d != d || d > 1.0e6f || d < -1.0e6f) && err != nil && nerr > 0){
-			snprint(err, nerr,
-				"bad q4_0 scale: tensor=%s block=%llud off=%llud raw_half=%#ux d=%g q0=%ux q1=%ux",
-				tp->name, b, tp->off, dh, d, qs[0], qs[1]);
+		if(d != d || d > 1.0e6f || d < -1.0e6f){
+			if(err != nil && nerr > 0)
+				snprint(err, nerr,
+					"bad q4_0 scale: tensor=%s block=%llud tensor_off=%llud file_off=%llud raw_half=%#ux d=%g q0=%ux q1=%ux",
+					tp->name, b, tp->off, (uvlong)(data_base + (vlong)tp->off + (vlong)b * 18), dh, d, qs[0], qs[1]);
+			return -1;
 		}
 		for(i = 0; i < QK4_0 / 2; i++){
 			tp->dst[b * QK4_0 + i] = d * ((qs[i] & 0x0f) - 8);
@@ -744,7 +768,7 @@ loadq80tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 
 	if(tp->count % QK8_0 != 0)
 		return -1;
-	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+	if(seekabs(fd, data_base + (vlong)tp->off) < 0)
 		return -1;
 	blocks = tp->count / QK8_0;
 	for(b = 0; b < blocks; b++){
