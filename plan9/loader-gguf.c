@@ -179,56 +179,48 @@ readf64(int fd, double *out)
 	return 0;
 }
 
-static float
-u32asf(ulong u)
-{
-	union {
-		ulong u;
-		float f;
-	} x;
-
-	x.u = u;
-	return x.f;
-}
-
 /*
- * IEEE fp16 -> fp32. Bit path for normals/inf; float path for subnormals (rare for Q scales).
+ * IEEE fp16 -> fp32 using only float/int (no ulong exponent bit-packing).
+ * Avoids unsigned wrap and ulong/float union layout issues on some Plan 9 builds.
  */
 static float
 f16tof32(ushort h)
 {
-	ulong x, sign, mant, u;
-	ulong exp;
-	int expi, e;
-	float m, scale;
+	int sign, exp, frac;
+	float s, m, scale;
 
-	x = (ulong)h & 0xffff;
-	sign = (x >> 15) & 1;
-	expi = (x >> 10) & 0x1f;
-	mant = x & 0x3ff;
+	sign = (h >> 15) & 1;
+	exp = (h >> 10) & 0x1f;
+	frac = h & 0x3ff;
+	s = sign ? -1.0f : 1.0f;
 
-	if(expi == 0){
-		if(mant == 0)
+	if(exp == 0){
+		if(frac == 0)
 			return sign ? -0.0f : 0.0f;
-		m = (float)mant / 1024.0f;
+		m = (float)frac / 1024.0f;
 		scale = 1.0f;
-		expi = 14;
-		while(expi-- > 0)
+		exp = 14;
+		while(exp-- > 0)
 			scale *= 0.5f;
-		return (sign ? -1.0f : 1.0f) * m * scale;
+		return s * m * scale;
 	}
-	if(expi == 31){
-		if(mant == 0){
-			u = (sign << 31) | (0xff << 23);
-			return u32asf(u);
-		}
+	if(exp == 31){
+		if(frac == 0)
+			return s * 1.0e30f;
 		return 0.0f / 0.0f;
 	}
-	/* signed expi-15; (ulong)expi - 15 would underflow when expi < 15 */
-	e = expi - 15 + 127;
-	exp = (ulong)e;
-	u = (sign << 31) | (exp << 23) | (mant << 13);
-	return u32asf(u);
+
+	m = 1.0f + (float)frac / 1024.0f;
+	scale = 1.0f;
+	exp -= 15;
+	if(exp > 0){
+		while(exp-- > 0)
+			scale *= 2.0f;
+	}else if(exp < 0){
+		while(exp++ < 0)
+			scale *= 0.5f;
+	}
+	return s * m * scale;
 }
 
 static int
