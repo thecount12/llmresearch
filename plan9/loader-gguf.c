@@ -182,39 +182,28 @@ readf64(int fd, double *out)
 static float
 f16tof32(ushort h)
 {
-	ulong sign, exp, frac, fexp, ffrac, bits;
-	union {
-		ulong u;
-		float f;
-	} v;
+	int sign, exp, frac;
+	float s, m;
 
 	sign = (h >> 15) & 1;
 	exp = (h >> 10) & 0x1f;
 	frac = h & 0x3ff;
+	s = sign ? -1.0f : 1.0f;
 
 	if(exp == 0){
-		if(frac == 0){
-			bits = sign << 31;
-		}else{
-			exp = 1;
-			while((frac & 0x400) == 0){
-				frac <<= 1;
-				exp--;
-			}
-			frac &= 0x3ff;
-			fexp = exp + (127 - 15);
-			ffrac = frac << 13;
-			bits = (sign << 31) | (fexp << 23) | ffrac;
-		}
-	}else if(exp == 0x1f){
-		bits = (sign << 31) | (0xff << 23) | (frac << 13);
-	}else{
-		fexp = exp + (127 - 15);
-		ffrac = frac << 13;
-		bits = (sign << 31) | (fexp << 23) | ffrac;
+		if(frac == 0)
+			return sign ? -0.0f : 0.0f;
+		m = (float)frac / 1024.0f;
+		return s * m * pow(2.0, -14.0);
 	}
-	v.u = bits;
-	return v.f;
+	if(exp == 0x1f){
+		if(frac == 0)
+			return s * 1.0e30f;
+		return 0.0f / 0.0f;
+	}
+
+	m = 1.0f + (float)frac / 1024.0f;
+	return s * m * pow(2.0, (double)(exp - 15));
 }
 
 static int
