@@ -84,7 +84,7 @@ void accum(float *dst, float *src, int n);
 void scale(float *x, float s, int n);
 float dot(float *a, float *b, int n);
 void softmax(float *x, int n);
-void rmsnorm(float *out, float *x, float *weight, int n, float eps);
+void rmsnorm(float *out, float *x, float *weight, int n);
 void matvec(float *out, float *w, float *x, int nout, int nin);
 float silu(float x);
 void rope_apply(float *q, float *k, int pos, Config *cfg);

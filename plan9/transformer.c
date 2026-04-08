@@ -43,7 +43,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	for(l = 0; l < cfg->n_layers; l++){
 		lw = &m->layers[l];
 
-		rmsnorm(s->xb, s->x, lw->rms_att_weight, dim, cfg->rms_eps);
+		rmsnorm(s->xb, s->x, lw->rms_att_weight, dim);
 		matvec(s->q, lw->wq, s->xb, dim, dim);
 		matvec(s->k, lw->wk, s->xb, kdim, dim);
 		matvec(s->v, lw->wv, s->xb, kdim, dim);
@@ -82,7 +82,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		matvec(s->xb, lw->wo, s->xb2, dim, dim);
 		accum(s->x, s->xb, dim);
 
-		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim, cfg->rms_eps);
+		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim);
 		matvec(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
 		matvec(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
 		for(i = 0; i < cfg->hidden_dim; i++)
@@ -91,7 +91,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		accum(s->x, s->xb, dim);
 	}
 
-	rmsnorm(s->xb, s->x, m->rms_final_weight, dim, cfg->rms_eps);
+	rmsnorm(s->xb, s->x, m->rms_final_weight, dim);
 	matvec(s->logits, m->wcls, s->xb, cfg->vocab_size, dim);
 	return 0;
 }

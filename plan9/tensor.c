@@ -70,11 +70,13 @@ softmax(float *x, int n)
 }
 
 void
-rmsnorm(float *out, float *x, float *weight, int n, float eps)
+rmsnorm(float *out, float *x, float *weight, int n)
 {
 	int i;
 	float ss, scalev;
+	float eps;
 
+	eps = 1e-5f;
 	ss = 0.0f;
 	for(i = 0; i < n; i++)
 		ss += x[i] * x[i];
