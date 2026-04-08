@@ -304,13 +304,3 @@ load_model_auto(Model *m, char *path, char *err, int nerr)
 		return -1;
 	}
 }
-
-int
-load_model_gguf(Model *m, char *path, char *err, int nerr)
-{
-	USED(m);
-	USED(path);
-	USED(err);
-	USED(nerr);
-	return -1;
-}
