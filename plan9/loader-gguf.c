@@ -183,7 +183,7 @@ static float
 f16tof32(ushort h)
 {
 	int sign, exp, frac;
-	float s, m;
+	float s, m, scale;
 
 	sign = (h >> 15) & 1;
 	exp = (h >> 10) & 0x1f;
@@ -194,7 +194,11 @@ f16tof32(ushort h)
 		if(frac == 0)
 			return sign ? -0.0f : 0.0f;
 		m = (float)frac / 1024.0f;
-		return s * m * pow(2.0, -14.0);
+		scale = 1.0f;
+		exp = 14;
+		while(exp-- > 0)
+			scale *= 0.5f;
+		return s * m * scale;
 	}
 	if(exp == 0x1f){
 		if(frac == 0)
@@ -203,7 +207,16 @@ f16tof32(ushort h)
 	}
 
 	m = 1.0f + (float)frac / 1024.0f;
-	return s * m * pow(2.0, (double)(exp - 15));
+	scale = 1.0f;
+	exp -= 15;
+	if(exp > 0){
+		while(exp-- > 0)
+			scale *= 2.0f;
+	}else if(exp < 0){
+		while(exp++ < 0)
+			scale *= 0.5f;
+	}
+	return s * m * scale;
 }
 
 static int
