@@ -491,7 +491,13 @@ parse_tensor_infos(int fd, uvlong n, GGUFMap *gm)
 static int
 hasrequired(GGUFInfo *gi, GGUFMap *gm)
 {
-	if(gm->token_embd < 1 || gm->output_norm < 1 || gm->output < 1)
+	if(gm->token_embd < 1 || gm->output_norm < 1)
+		return 0;
+	/*
+	 * Some llama-family checkpoints tie lm_head/output to token embeddings,
+	 * so output.weight may be absent even though the model is complete.
+	 */
+	if(gm->output < 1 && gm->token_embd < 1)
 		return 0;
 	if(gm->attn_norm < gi->n_layers || gm->attn_q < gi->n_layers ||
 	   gm->attn_k < gi->n_layers || gm->attn_v < gi->n_layers ||
@@ -567,15 +573,15 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	}
 	if(gm.quantized > 0){
 		snprint(err, nerr,
-			"gguf mapped: arch=%s version=%lud tensors=%llud layers=%llud dim=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud; quantized tensor loading not implemented (first ggml_type=%lud, mapped layers ok)",
+			"gguf mapped: arch=%s version=%lud tensors=%llud layers=%llud dim=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; quantized tensor loading not implemented (first ggml_type=%lud, mapped layers ok)",
 			gi.architecture, gi.version, gi.tensor_count, gi.n_layers, gi.dim,
-			gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.first_type);
+			gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.output < 1, gm.first_type);
 		return -1;
 	}
 
 	snprint(err, nerr,
-		"gguf mapped: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud; float32 tensor loading not implemented",
+		"gguf mapped: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; float32 tensor loading not implemented",
 		gi.architecture, gi.version, gi.tensor_count, gi.kv_count, gi.dim,
-		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len);
+		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.output < 1);
 	return -1;
 }
