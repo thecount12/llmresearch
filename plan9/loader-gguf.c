@@ -180,59 +180,71 @@ readf64(int fd, double *out)
 }
 
 /*
- * IEEE fp16 -> fp32 using only float/int (no ulong exponent bit-packing).
- * Avoids unsigned wrap and ulong/float union layout issues on some Plan 9 builds.
+ * IEEE fp16 -> fp32: double for mantissa/scale; explicit for-loops only.
  */
 static float
 f16tof32(ushort h)
 {
 	int sign, exp, frac;
-	float s, m, scale;
+	double s, m, scale;
+	int k;
 
 	sign = (h >> 15) & 1;
 	exp = (h >> 10) & 0x1f;
 	frac = h & 0x3ff;
-	s = sign ? -1.0f : 1.0f;
+	s = sign ? -1.0 : 1.0;
 
 	if(exp == 0){
 		if(frac == 0)
 			return sign ? -0.0f : 0.0f;
-		m = (float)frac / 1024.0f;
-		scale = 1.0f;
-		exp = 14;
-		while(exp-- > 0)
-			scale *= 0.5f;
-		return s * m * scale;
+		m = (double)frac / 1024.0;
+		scale = 1.0;
+		for(k = 0; k < 14; k++)
+			scale *= 0.5;
+		return (float)(s * m * scale);
 	}
 	if(exp == 31){
 		if(frac == 0)
-			return s * 1.0e30f;
+			return (float)(s * 1.0e30);
 		return 0.0f / 0.0f;
 	}
 
-	m = 1.0f + (float)frac / 1024.0f;
-	scale = 1.0f;
+	m = 1.0 + (double)frac / 1024.0;
+	scale = 1.0;
 	exp -= 15;
 	if(exp > 0){
-		while(exp-- > 0)
-			scale *= 2.0f;
+		for(k = 0; k < exp; k++)
+			scale *= 2.0;
 	}else if(exp < 0){
-		while(exp++ < 0)
-			scale *= 0.5f;
+		for(k = 0; k < -exp; k++)
+			scale *= 0.5;
 	}
-	return s * m * scale;
+	return (float)(s * m * scale);
 }
 
 static int
 seekabs(int fd, vlong off)
 {
-	vlong r;
-
 	if(seek(fd, off, 0) < 0)
 		return -1;
-	r = seek(fd, 0, 1);
-	if(r < 0 || r != off)
+	return 0;
+}
+
+/* Known-good fp16 scale from SmolLM Q4 (first ffn_down block uses half 0x2a88). */
+static int
+gguf_f16_selftest(char *err, int nerr)
+{
+	ushort h;
+	float x;
+
+	h = 0x2a88;
+	x = f16tof32(h);
+	if(x != x || x < 0.049f || x > 0.054f){
+		snprint(err, nerr,
+			"gguf f16 self-test failed (rebuild loader-gguf): half=%#ux float=%g [expect ~0.051]",
+			h, x);
 		return -1;
+	}
 	return 0;
 }
 
@@ -785,11 +797,17 @@ checktensor(GGUFTensorPlan *tp, char *err, int nerr)
 {
 	uvlong i;
 	float v;
+	union {
+		float f;
+		ulong u;
+	} vu;
 
 	for(i = 0; i < tp->count; i++){
 		v = tp->dst[i];
 		if(v != v || v > 1.0e6f || v < -1.0e6f){
-			snprint(err, nerr, "bad tensor values: %s idx=%llud val=%g type=%lud", tp->name, i, v, tp->type);
+			vu.f = v;
+			snprint(err, nerr, "bad tensor values: %s idx=%llud val=%g bits=%#lux type=%lud",
+				tp->name, i, v, (ulong)(vu.u & 0xffffffffu), tp->type);
 			return -1;
 		}
 	}
@@ -945,6 +963,13 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		rem = data_base % gi.alignment;
 		if(rem != 0)
 			data_base += gi.alignment - rem;
+	}
+
+	if(gguf_f16_selftest(err, nerr) < 0){
+		close(fd);
+		free(gp.items);
+		free_model(m);
+		return -1;
 	}
 
 	if(loadmappedtensors(fd, data_base, &gp, err, nerr) < 0){
