@@ -1,6 +1,11 @@
 #include "common.h"
 #include "model.h"
 
+typedef struct GGUFInfo GGUFInfo;
+typedef struct GGUFMap GGUFMap;
+typedef struct GGUFTensorPlan GGUFTensorPlan;
+typedef struct GGUFLoadPlan GGUFLoadPlan;
+
 enum {
 	GGUFUint8 = 0,
 	GGUFInt8,
@@ -17,8 +22,16 @@ enum {
 	GGUFFloat64
 };
 
-typedef struct GGUFInfo GGUFInfo;
-typedef struct GGUFMap GGUFMap;
+enum {
+	GGMLTypeF32 = 0,
+	GGMLTypeF16 = 1,
+	GGMLTypeQ4_0 = 2
+};
+
+enum {
+	QK4_0 = 32
+};
+
 struct GGUFInfo {
 	ulong version;
 	uvlong tensor_count;
@@ -48,8 +61,24 @@ struct GGUFMap {
 	int ffn_down;
 	int ffn_up;
 	int unknown;
-	int quantized;
+	int q4_0;
+	int unsupported;
 	ulong first_type;
+};
+
+struct GGUFTensorPlan {
+	char name[96];
+	float *dst;
+	uvlong count;
+	uvlong off;
+	ulong type;
+};
+
+struct GGUFLoadPlan {
+	GGUFTensorPlan *items;
+	int n;
+	int cap;
+	int tied_output;
 };
 
 static int
@@ -146,6 +175,44 @@ readf64(int fd, double *out)
 	return 0;
 }
 
+static float
+f16tof32(ushort h)
+{
+	ulong sign, exp, frac, fexp, ffrac, bits;
+	union {
+		ulong u;
+		float f;
+	} v;
+
+	sign = (h >> 15) & 1;
+	exp = (h >> 10) & 0x1f;
+	frac = h & 0x3ff;
+
+	if(exp == 0){
+		if(frac == 0){
+			bits = sign << 31;
+		}else{
+			exp = 1;
+			while((frac & 0x400) == 0){
+				frac <<= 1;
+				exp--;
+			}
+			frac &= 0x3ff;
+			fexp = exp + (127 - 15);
+			ffrac = frac << 13;
+			bits = (sign << 31) | (fexp << 23) | ffrac;
+		}
+	}else if(exp == 0x1f){
+		bits = (sign << 31) | (0xff << 23) | (frac << 13);
+	}else{
+		fexp = exp + (127 - 15);
+		ffrac = frac << 13;
+		bits = (sign << 31) | (fexp << 23) | ffrac;
+	}
+	v.u = bits;
+	return v.f;
+}
+
 static int
 readstr(int fd, char **out)
 {
@@ -233,6 +300,32 @@ copystr0(char *dst, int ndst, char *src)
 	if(ndst <= 0)
 		return;
 	snprint(dst, ndst, "%s", src);
+}
+
+static int
+addplan(GGUFLoadPlan *gp, char *name, float *dst, uvlong count, uvlong off, ulong type)
+{
+	if(gp->n >= gp->cap)
+		return -1;
+	snprint(gp->items[gp->n].name, sizeof gp->items[gp->n].name, "%s", name);
+	gp->items[gp->n].dst = dst;
+	gp->items[gp->n].count = count;
+	gp->items[gp->n].off = off;
+	gp->items[gp->n].type = type;
+	gp->n++;
+	return 0;
+}
+
+static int
+checkdims1(ulong ndims, uvlong *dims, uvlong d0)
+{
+	return ndims == 1 && dims[0] == d0;
+}
+
+static int
+checkdims2(ulong ndims, uvlong *dims, uvlong d0, uvlong d1)
+{
+	return ndims == 2 && dims[0] == d0 && dims[1] == d1;
 }
 
 static void
@@ -367,7 +460,7 @@ static int
 parseblklayer(char *name, char *suffix)
 {
 	char *p, *q;
-	int n, want;
+	int n;
 
 	p = name;
 	if(strncmp(p, "blk.", 4) != 0)
@@ -381,82 +474,139 @@ parseblklayer(char *name, char *suffix)
 	if(*p != '.')
 		return -1;
 	q = p + 1;
-	want = strlen(suffix);
 	if(strcmp(q, suffix) == 0)
 		return n;
 	return -1;
 }
 
-static int
-istensorf32(ulong ggml_type)
+static void
+marktype(GGUFMap *gm, ulong ggml_type)
 {
-	return ggml_type == 0;
+	if(ggml_type == GGMLTypeF32)
+		return;
+	if(ggml_type == GGMLTypeQ4_0){
+		gm->q4_0++;
+		return;
+	}
+	gm->unsupported++;
+	if(gm->first_type == 0)
+		gm->first_type = ggml_type;
 }
 
-static void
-updatemap(GGUFMap *gm, char *name, ulong ggml_type)
+static int
+maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, ulong ndims, uvlong *dims, uvlong off)
 {
-	if(!istensorf32(ggml_type)){
-		gm->quantized++;
-		if(gm->first_type == 0)
-			gm->first_type = ggml_type;
-	}
+	int layer;
+	Config *cfg;
+	int kdim;
+
+	cfg = &m->cfg;
+	kdim = (cfg->dim / cfg->n_heads) * cfg->n_kv_heads;
 
 	if(strcmp(name, "token_embd.weight") == 0){
+		if(!checkdims2(ndims, dims, cfg->dim, cfg->vocab_size))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->token_embd++;
-		return;
+		return addplan(gp, name, m->token_embedding_table, cfg->vocab_size * cfg->dim, off, ggml_type);
 	}
 	if(strcmp(name, "output_norm.weight") == 0){
+		if(!checkdims1(ndims, dims, cfg->dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->output_norm++;
-		return;
+		return addplan(gp, name, m->rms_final_weight, cfg->dim, off, ggml_type);
 	}
 	if(strcmp(name, "output.weight") == 0){
+		if(!checkdims2(ndims, dims, cfg->dim, cfg->vocab_size))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->output++;
-		return;
+		return addplan(gp, name, m->wcls, cfg->vocab_size * cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "attn_norm.weight") >= 0){
+
+	layer = parseblklayer(name, "attn_norm.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims1(ndims, dims, cfg->dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->attn_norm++;
-		return;
+		return addplan(gp, name, m->layers[layer].rms_att_weight, cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "attn_q.weight") >= 0){
+	layer = parseblklayer(name, "attn_q.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims2(ndims, dims, cfg->dim, cfg->dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->attn_q++;
-		return;
+		return addplan(gp, name, m->layers[layer].wq, cfg->dim * cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "attn_k.weight") >= 0){
+	layer = parseblklayer(name, "attn_k.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims2(ndims, dims, cfg->dim, kdim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->attn_k++;
-		return;
+		return addplan(gp, name, m->layers[layer].wk, kdim * cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "attn_v.weight") >= 0){
+	layer = parseblklayer(name, "attn_v.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims2(ndims, dims, cfg->dim, kdim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->attn_v++;
-		return;
+		return addplan(gp, name, m->layers[layer].wv, kdim * cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "attn_output.weight") >= 0){
+	layer = parseblklayer(name, "attn_output.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims2(ndims, dims, cfg->dim, cfg->dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->attn_out++;
-		return;
+		return addplan(gp, name, m->layers[layer].wo, cfg->dim * cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "ffn_norm.weight") >= 0){
+	layer = parseblklayer(name, "ffn_norm.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims1(ndims, dims, cfg->dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->ffn_norm++;
-		return;
+		return addplan(gp, name, m->layers[layer].rms_ffn_weight, cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "ffn_gate.weight") >= 0){
+	layer = parseblklayer(name, "ffn_gate.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims2(ndims, dims, cfg->dim, cfg->hidden_dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->ffn_gate++;
-		return;
+		return addplan(gp, name, m->layers[layer].w1, cfg->hidden_dim * cfg->dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "ffn_down.weight") >= 0){
+	layer = parseblklayer(name, "ffn_down.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims2(ndims, dims, cfg->hidden_dim, cfg->dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->ffn_down++;
-		return;
+		return addplan(gp, name, m->layers[layer].w2, cfg->dim * cfg->hidden_dim, off, ggml_type);
 	}
-	if(parseblklayer(name, "ffn_up.weight") >= 0){
+	layer = parseblklayer(name, "ffn_up.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims2(ndims, dims, cfg->dim, cfg->hidden_dim))
+			return -1;
+		marktype(gm, ggml_type);
 		gm->ffn_up++;
-		return;
+		return addplan(gp, name, m->layers[layer].w3, cfg->hidden_dim * cfg->dim, off, ggml_type);
 	}
+
 	gm->unknown++;
+	return 0;
 }
 
 static int
-parse_tensor_infos(int fd, uvlong n, GGUFMap *gm)
+parse_tensor_infos(int fd, uvlong n, Model *m, GGUFMap *gm, GGUFLoadPlan *gp)
 {
-	uvlong i, j, dimv, off;
+	uvlong i, j, off;
+	uvlong dims[4];
 	ulong ndims, ggml_type;
 	char *name;
 
@@ -468,8 +618,12 @@ parse_tensor_infos(int fd, uvlong n, GGUFMap *gm)
 			free(name);
 			return -1;
 		}
+		if(ndims > 4){
+			free(name);
+			return -1;
+		}
 		for(j = 0; j < ndims; j++){
-			if(readu64(fd, &dimv) < 0){
+			if(readu64(fd, &dims[j]) < 0){
 				free(name);
 				return -1;
 			}
@@ -482,7 +636,10 @@ parse_tensor_infos(int fd, uvlong n, GGUFMap *gm)
 			free(name);
 			return -1;
 		}
-		updatemap(gm, name, ggml_type);
+		if(maptensor(m, gm, gp, name, ggml_type, ndims, dims, off) < 0){
+			free(name);
+			return -1;
+		}
 		free(name);
 	}
 	return 0;
@@ -493,10 +650,6 @@ hasrequired(GGUFInfo *gi, GGUFMap *gm)
 {
 	if(gm->token_embd < 1 || gm->output_norm < 1)
 		return 0;
-	/*
-	 * Some llama-family checkpoints tie lm_head/output to token embeddings,
-	 * so output.weight may be absent even though the model is complete.
-	 */
 	if(gm->output < 1 && gm->token_embd < 1)
 		return 0;
 	if(gm->attn_norm < gi->n_layers || gm->attn_q < gi->n_layers ||
@@ -508,18 +661,80 @@ hasrequired(GGUFInfo *gi, GGUFMap *gm)
 	return 1;
 }
 
+static int
+loadf32tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
+{
+	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+		return -1;
+	return readfull9(fd, tp->dst, (int)(tp->count * sizeof(float)));
+}
+
+static int
+loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
+{
+	uvlong blocks, b;
+	ushort dh;
+	uchar qs[QK4_0 / 2];
+	float d;
+	int i;
+
+	if(tp->count % QK4_0 != 0)
+		return -1;
+	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+		return -1;
+	blocks = tp->count / QK4_0;
+	for(b = 0; b < blocks; b++){
+		if(readu16(fd, &dh) < 0)
+			return -1;
+		if(readfull9(fd, qs, sizeof qs) < 0)
+			return -1;
+		d = f16tof32(dh);
+		for(i = 0; i < QK4_0 / 2; i++){
+			tp->dst[b * QK4_0 + i] = d * ((qs[i] & 0x0f) - 8);
+			tp->dst[b * QK4_0 + i + QK4_0 / 2] = d * ((qs[i] >> 4) - 8);
+		}
+	}
+	return 0;
+}
+
+static int
+loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp)
+{
+	int i;
+
+	for(i = 0; i < gp->n; i++){
+		switch(gp->items[i].type){
+		case GGMLTypeF32:
+			if(loadf32tensor(fd, data_base, &gp->items[i]) < 0)
+				return -1;
+			break;
+		case GGMLTypeQ4_0:
+			if(loadq40tensor(fd, data_base, &gp->items[i]) < 0)
+				return -1;
+			break;
+		default:
+			return -1;
+		}
+	}
+	return 0;
+}
+
 int
 load_model_gguf(Model *m, char *path, char *err, int nerr)
 {
 	int fd;
 	uchar magic[4];
-	ulong version;
+	ulong version, rem;
+	vlong data_base;
+	Config cfg;
 	GGUFInfo gi;
 	GGUFMap gm;
-
-	USED(m);
+	GGUFLoadPlan gp;
 
 	memset(&gi, 0, sizeof gi);
+	memset(&gm, 0, sizeof gm);
+	memset(&gp, 0, sizeof gp);
+	memset(&cfg, 0, sizeof cfg);
 	gi.alignment = 32;
 
 	fd = open(path, OREAD);
@@ -549,19 +764,42 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		close(fd);
 		return -1;
 	}
-	if(parse_tensor_infos(fd, gi.tensor_count, &gm) < 0){
-		snprint(err, nerr, "failed parsing gguf tensor table");
-		close(fd);
-		return -1;
-	}
-	close(fd);
 
 	if(gi.architecture[0] == 0)
 		copystr0(gi.architecture, sizeof gi.architecture, "unknown");
-	if(gi.vocab_size == 0)
-		gi.vocab_size = 0;
 	if(gi.n_kv_heads == 0 && gi.n_heads > 0)
 		gi.n_kv_heads = gi.n_heads;
+
+	cfg.vocab_size = gi.vocab_size;
+	cfg.dim = gi.dim;
+	cfg.hidden_dim = gi.hidden_dim;
+	cfg.n_layers = gi.n_layers;
+	cfg.n_heads = gi.n_heads;
+	cfg.n_kv_heads = gi.n_kv_heads;
+	cfg.seq_len = gi.seq_len;
+	cfg.rms_eps = 1e-5f;
+
+	if(alloc_model(m, &cfg, err, nerr) < 0){
+		close(fd);
+		return -1;
+	}
+
+	gp.cap = 3 + cfg.n_layers * 9;
+	gp.items = mallocz(gp.cap * sizeof(GGUFTensorPlan), 1);
+	if(gp.items == nil){
+		snprint(err, nerr, "mallocz failed");
+		close(fd);
+		free_model(m);
+		return -1;
+	}
+
+	if(parse_tensor_infos(fd, gi.tensor_count, m, &gm, &gp) < 0){
+		snprint(err, nerr, "failed parsing gguf tensor table");
+		close(fd);
+		free(gp.items);
+		free_model(m);
+		return -1;
+	}
 
 	if(!hasrequired(&gi, &gm)){
 		snprint(err, nerr,
@@ -569,19 +807,55 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 			gi.architecture, gi.n_layers, gm.token_embd, gm.output_norm, gm.output,
 			gm.attn_norm, gm.attn_q, gm.attn_k, gm.attn_v, gm.attn_out,
 			gm.ffn_norm, gm.ffn_gate, gm.ffn_down, gm.ffn_up, gm.unknown);
-		return -1;
-	}
-	if(gm.quantized > 0){
-		snprint(err, nerr,
-			"gguf mapped: arch=%s version=%lud tensors=%llud layers=%llud dim=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; quantized tensor loading not implemented (first ggml_type=%lud, mapped layers ok)",
-			gi.architecture, gi.version, gi.tensor_count, gi.n_layers, gi.dim,
-			gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.output < 1, gm.first_type);
+		close(fd);
+		free(gp.items);
+		free_model(m);
 		return -1;
 	}
 
+	if(gm.unsupported > 0){
+		snprint(err, nerr,
+			"gguf mapped: arch=%s version=%lud tensors=%llud layers=%llud dim=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; unsupported ggml tensor type=%lud",
+			gi.architecture, gi.version, gi.tensor_count, gi.n_layers, gi.dim,
+			gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.output < 1, gm.first_type);
+		close(fd);
+		free(gp.items);
+		free_model(m);
+		return -1;
+	}
+
+	data_base = seek(fd, 0, 1);
+	if(data_base < 0){
+		snprint(err, nerr, "seek failed after tensor table");
+		close(fd);
+		free(gp.items);
+		free_model(m);
+		return -1;
+	}
+	if(gi.alignment > 1){
+		rem = data_base % gi.alignment;
+		if(rem != 0)
+			data_base += gi.alignment - rem;
+	}
+
+	if(loadmappedtensors(fd, data_base, &gp) < 0){
+		snprint(err, nerr, "failed loading mapped gguf tensors");
+		close(fd);
+		free(gp.items);
+		free_model(m);
+		return -1;
+	}
+	close(fd);
+
+	if(gm.output < 1){
+		memmove(m->wcls, m->token_embedding_table, cfg.vocab_size * cfg.dim * sizeof(float));
+		gp.tied_output = 1;
+	}
+
+	free(gp.items);
 	snprint(err, nerr,
-		"gguf mapped: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; float32 tensor loading not implemented",
+		"gguf loaded: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d q4_0=%d",
 		gi.architecture, gi.version, gi.tensor_count, gi.kv_count, gi.dim,
-		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.output < 1);
-	return -1;
+		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gp.tied_output, gm.q4_0);
+	return 0;
 }
