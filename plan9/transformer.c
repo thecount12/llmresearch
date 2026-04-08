@@ -1,3 +1,4 @@
+#include "common.h"
 #include "model.h"
 
 static int

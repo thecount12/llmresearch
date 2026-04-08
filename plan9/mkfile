@@ -1,0 +1,15 @@
+</$objtype/mkfile
+
+TARG=lumen
+OFILES=main.$O\
+		model.$O\
+		sampler.$O\
+		tensor.$O\
+		transformer.$O\
+		loader-simple.$O\
+
+HFILES=model.h\
+	   
+BIN=$home/bin/$objtype
+
+</sys/src/cmd/mkone

@@ -1,9 +1,6 @@
 #ifndef PLAN9_MODEL_H
 #define PLAN9_MODEL_H
 
-#include <u.h>
-#include <libc.h>
-
 typedef struct Config Config;
 typedef struct LayerWeights LayerWeights;
 typedef struct Model Model;
