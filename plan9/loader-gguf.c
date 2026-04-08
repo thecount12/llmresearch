@@ -700,7 +700,7 @@ loadf16tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 }
 
 static int
-loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
+loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp, char *err, int nerr)
 {
 	uvlong blocks, b;
 	ushort dh;
@@ -719,6 +719,11 @@ loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 		if(readfull9(fd, qs, sizeof qs) < 0)
 			return -1;
 		d = f16tof32(dh);
+		if((d != d || d > 1.0e6f || d < -1.0e6f) && err != nil && nerr > 0){
+			snprint(err, nerr,
+				"bad q4_0 scale: tensor=%s block=%llud off=%llud raw_half=%#ux d=%g q0=%ux q1=%ux",
+				tp->name, b, tp->off, dh, d, qs[0], qs[1]);
+		}
 		for(i = 0; i < QK4_0 / 2; i++){
 			tp->dst[b * QK4_0 + i] = d * ((qs[i] & 0x0f) - 8);
 			tp->dst[b * QK4_0 + i + QK4_0 / 2] = d * ((qs[i] >> 4) - 8);
@@ -788,7 +793,7 @@ loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp, char *err, int nerr
 				return -1;
 			break;
 		case GGMLTypeQ4_0:
-			if(loadq40tensor(fd, data_base, &gp->items[i]) < 0)
+			if(loadq40tensor(fd, data_base, &gp->items[i], err, nerr) < 0)
 				return -1;
 			break;
 		case GGMLTypeQ8_0:
