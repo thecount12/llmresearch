@@ -1,0 +1,8 @@
+print "About to download /SmolLM-135M-GGUF";
+run("hget 'https://huggingface.co/QuantFactory/SmolLM-135M-GGUF/resolve/main/SmolLM-135M.Q4_0.gguf?download=true' > SmolLM-135M.Q4_0.gguf");
+
+if (fileExists("SmolLM-135M.Q4_0.gguf")) {
+    print "Download appears complete";
+} else {
+    print "Download failed";
+}
