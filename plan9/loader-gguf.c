@@ -755,7 +755,23 @@ loadq80tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 }
 
 static int
-loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp)
+checktensor(GGUFTensorPlan *tp, char *err, int nerr)
+{
+	uvlong i;
+	float v;
+
+	for(i = 0; i < tp->count; i++){
+		v = tp->dst[i];
+		if(v != v || v > 1.0e6f || v < -1.0e6f){
+			snprint(err, nerr, "bad tensor values: %s idx=%llud val=%g type=%lud", tp->name, i, v, tp->type);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int
+loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp, char *err, int nerr)
 {
 	int i;
 
@@ -780,6 +796,8 @@ loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp)
 		default:
 			return -1;
 		}
+		if(checktensor(&gp->items[i], err, nerr) < 0)
+			return -1;
 	}
 	return 0;
 }
@@ -903,8 +921,9 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 			data_base += gi.alignment - rem;
 	}
 
-	if(loadmappedtensors(fd, data_base, &gp) < 0){
-		snprint(err, nerr, "failed loading mapped gguf tensors");
+	if(loadmappedtensors(fd, data_base, &gp, err, nerr) < 0){
+		if(err[0] == 0)
+			snprint(err, nerr, "failed loading mapped gguf tensors");
 		close(fd);
 		free(gp.items);
 		free_model(m);
