@@ -179,20 +179,35 @@ readf64(int fd, double *out)
 	return 0;
 }
 
+static float
+u32asf(ulong u)
+{
+	union {
+		ulong u;
+		float f;
+	} x;
+
+	x.u = u & (ulong)0xffffffff;
+	return x.f;
+}
+
 /*
- * IEEE fp16 -> fp32: double for mantissa/scale; explicit for-loops only.
+ * IEEE fp16 -> fp32. Normals use explicit int exponent + uint32 bits (no float
+ * multiply loop) so biased exp is never built via ulong underflow.
+ * Subnormals use double scaling only.
  */
 static float
 f16tof32(ushort h)
 {
 	int sign, exp, frac;
-	double s, m, scale;
+	int e;
+	ulong u;
+	double m, scale;
 	int k;
 
 	sign = (h >> 15) & 1;
 	exp = (h >> 10) & 0x1f;
 	frac = h & 0x3ff;
-	s = sign ? -1.0 : 1.0;
 
 	if(exp == 0){
 		if(frac == 0)
@@ -201,25 +216,19 @@ f16tof32(ushort h)
 		scale = 1.0;
 		for(k = 0; k < 14; k++)
 			scale *= 0.5;
-		return (float)(s * m * scale);
+		return (float)((sign ? -1.0 : 1.0) * m * scale);
 	}
 	if(exp == 31){
-		if(frac == 0)
-			return (float)(s * 1.0e30);
+		if(frac == 0){
+			u = (ulong)(sign << 31) | (0xffu << 23);
+			return u32asf(u);
+		}
 		return 0.0f / 0.0f;
 	}
 
-	m = 1.0 + (double)frac / 1024.0;
-	scale = 1.0;
-	exp -= 15;
-	if(exp > 0){
-		for(k = 0; k < exp; k++)
-			scale *= 2.0;
-	}else if(exp < 0){
-		for(k = 0; k < -exp; k++)
-			scale *= 0.5;
-	}
-	return (float)(s * m * scale);
+	e = exp - 15 + 127;
+	u = (ulong)(sign << 31) | ((ulong)e << 23) | ((ulong)frac << 13);
+	return u32asf(u);
 }
 
 static int
@@ -230,19 +239,22 @@ seekabs(int fd, vlong off)
 	return 0;
 }
 
-/* Known-good fp16 scale from SmolLM Q4 (first ffn_down block uses half 0x2a88). */
+/* SmolLM Q4 ffn_down first-block scale is half 0x2a88 -> float bits 0x3d510000. */
 static int
 gguf_f16_selftest(char *err, int nerr)
 {
 	ushort h;
-	float x;
+	union {
+		float f;
+		ulong u;
+	} vu;
 
 	h = 0x2a88;
-	x = f16tof32(h);
-	if(x != x || x < 0.049f || x > 0.054f){
+	vu.f = f16tof32(h);
+	if((vu.u & (ulong)0xffffffff) != (ulong)0x3d510000){
 		snprint(err, nerr,
-			"gguf f16 self-test failed (rebuild loader-gguf): half=%#ux float=%g [expect ~0.051]",
-			h, x);
+			"gguf f16 self-test: half=%#ux want bits %#lux got %#lux (recompile loader-gguf.c)",
+			h, (ulong)0x3d510000, vu.u & (ulong)0xffffffff);
 		return -1;
 	}
 	return 0;
@@ -807,7 +819,7 @@ checktensor(GGUFTensorPlan *tp, char *err, int nerr)
 		if(v != v || v > 1.0e6f || v < -1.0e6f){
 			vu.f = v;
 			snprint(err, nerr, "bad tensor values: %s idx=%llud val=%g bits=%#lux type=%lud",
-				tp->name, i, v, (ulong)(vu.u & 0xffffffffu), tp->type);
+				tp->name, i, v, vu.u & (ulong)0xffffffff, tp->type);
 			return -1;
 		}
 	}
