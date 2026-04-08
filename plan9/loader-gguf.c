@@ -64,6 +64,7 @@ struct GGUFMap {
 	int q4_0;
 	int unsupported;
 	ulong first_type;
+	char first_name[96];
 };
 
 struct GGUFTensorPlan {
@@ -480,17 +481,21 @@ parseblklayer(char *name, char *suffix)
 }
 
 static void
-marktype(GGUFMap *gm, ulong ggml_type)
+marktype(GGUFMap *gm, char *name, ulong ggml_type)
 {
 	if(ggml_type == GGMLTypeF32)
+		return;
+	if(ggml_type == GGMLTypeF16)
 		return;
 	if(ggml_type == GGMLTypeQ4_0){
 		gm->q4_0++;
 		return;
 	}
 	gm->unsupported++;
-	if(gm->first_type == 0)
+	if(gm->first_type == 0){
 		gm->first_type = ggml_type;
+		copystr0(gm->first_name, sizeof gm->first_name, name);
+	}
 }
 
 static int
@@ -506,21 +511,21 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(strcmp(name, "token_embd.weight") == 0){
 		if(!checkdims2(ndims, dims, cfg->dim, cfg->vocab_size))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->token_embd++;
 		return addplan(gp, name, m->token_embedding_table, cfg->vocab_size * cfg->dim, off, ggml_type);
 	}
 	if(strcmp(name, "output_norm.weight") == 0){
 		if(!checkdims1(ndims, dims, cfg->dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->output_norm++;
 		return addplan(gp, name, m->rms_final_weight, cfg->dim, off, ggml_type);
 	}
 	if(strcmp(name, "output.weight") == 0){
 		if(!checkdims2(ndims, dims, cfg->dim, cfg->vocab_size))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->output++;
 		return addplan(gp, name, m->wcls, cfg->vocab_size * cfg->dim, off, ggml_type);
 	}
@@ -529,7 +534,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims1(ndims, dims, cfg->dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->attn_norm++;
 		return addplan(gp, name, m->layers[layer].rms_att_weight, cfg->dim, off, ggml_type);
 	}
@@ -537,7 +542,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims2(ndims, dims, cfg->dim, cfg->dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->attn_q++;
 		return addplan(gp, name, m->layers[layer].wq, cfg->dim * cfg->dim, off, ggml_type);
 	}
@@ -545,7 +550,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims2(ndims, dims, cfg->dim, kdim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->attn_k++;
 		return addplan(gp, name, m->layers[layer].wk, kdim * cfg->dim, off, ggml_type);
 	}
@@ -553,7 +558,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims2(ndims, dims, cfg->dim, kdim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->attn_v++;
 		return addplan(gp, name, m->layers[layer].wv, kdim * cfg->dim, off, ggml_type);
 	}
@@ -561,7 +566,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims2(ndims, dims, cfg->dim, cfg->dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->attn_out++;
 		return addplan(gp, name, m->layers[layer].wo, cfg->dim * cfg->dim, off, ggml_type);
 	}
@@ -569,7 +574,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims1(ndims, dims, cfg->dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->ffn_norm++;
 		return addplan(gp, name, m->layers[layer].rms_ffn_weight, cfg->dim, off, ggml_type);
 	}
@@ -577,7 +582,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims2(ndims, dims, cfg->dim, cfg->hidden_dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->ffn_gate++;
 		return addplan(gp, name, m->layers[layer].w1, cfg->hidden_dim * cfg->dim, off, ggml_type);
 	}
@@ -585,7 +590,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims2(ndims, dims, cfg->hidden_dim, cfg->dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->ffn_down++;
 		return addplan(gp, name, m->layers[layer].w2, cfg->dim * cfg->hidden_dim, off, ggml_type);
 	}
@@ -593,7 +598,7 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims2(ndims, dims, cfg->dim, cfg->hidden_dim))
 			return -1;
-		marktype(gm, ggml_type);
+		marktype(gm, name, ggml_type);
 		gm->ffn_up++;
 		return addplan(gp, name, m->layers[layer].w3, cfg->hidden_dim * cfg->dim, off, ggml_type);
 	}
@@ -670,6 +675,22 @@ loadf32tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 }
 
 static int
+loadf16tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
+{
+	uvlong i;
+	ushort h;
+
+	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+		return -1;
+	for(i = 0; i < tp->count; i++){
+		if(readu16(fd, &h) < 0)
+			return -1;
+		tp->dst[i] = f16tof32(h);
+	}
+	return 0;
+}
+
+static int
 loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 {
 	uvlong blocks, b;
@@ -706,6 +727,10 @@ loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp)
 		switch(gp->items[i].type){
 		case GGMLTypeF32:
 			if(loadf32tensor(fd, data_base, &gp->items[i]) < 0)
+				return -1;
+			break;
+		case GGMLTypeF16:
+			if(loadf16tensor(fd, data_base, &gp->items[i]) < 0)
 				return -1;
 			break;
 		case GGMLTypeQ4_0:
@@ -815,9 +840,9 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 
 	if(gm.unsupported > 0){
 		snprint(err, nerr,
-			"gguf mapped: arch=%s version=%lud tensors=%llud layers=%llud dim=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; unsupported ggml tensor type=%lud",
+			"gguf mapped: arch=%s version=%lud tensors=%llud layers=%llud dim=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; unsupported ggml tensor type=%lud tensor=%s",
 			gi.architecture, gi.version, gi.tensor_count, gi.n_layers, gi.dim,
-			gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.output < 1, gm.first_type);
+			gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gm.output < 1, gm.first_type, gm.first_name);
 		close(fd);
 		free(gp.items);
 		free_model(m);
