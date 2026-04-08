@@ -7,8 +7,10 @@ OFILES=main.$O\
 		tensor.$O\
 		transformer.$O\
 		loader-simple.$O\
+		loader-gguf.$O\
 
-HFILES=model.h\
+HFILES=common.h\
+		model.h\
 	   
 BIN=$home/bin/$objtype
 

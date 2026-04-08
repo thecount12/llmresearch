@@ -310,6 +310,7 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 {
 	USED(m);
 	USED(path);
-	seterr(err, nerr, "gguf loader not implemented yet");
+	USED(err);
+	USED(nerr);
 	return -1;
 }
