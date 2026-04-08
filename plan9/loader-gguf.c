@@ -199,35 +199,35 @@ u32asf(ulong u)
 static float
 f16tof32(ushort h)
 {
-	int sign, exp, frac;
+	int exp, frac;
 	int e;
 	ulong u;
 	double m, scale;
 	int k;
 
-	sign = (h >> 15) & 1;
 	exp = (h >> 10) & 0x1f;
 	frac = h & 0x3ff;
 
 	if(exp == 0){
 		if(frac == 0)
-			return sign ? -0.0f : 0.0f;
+			return (h & 0x8000) ? -0.0f : 0.0f;
 		m = (double)frac / 1024.0;
 		scale = 1.0;
 		for(k = 0; k < 14; k++)
 			scale *= 0.5;
-		return (float)((sign ? -1.0 : 1.0) * m * scale);
+		return (float)(((h & 0x8000) ? -1.0 : 1.0) * m * scale);
 	}
 	if(exp == 31){
 		if(frac == 0){
-			u = (ulong)(sign << 31) | (0xffu << 23);
+			/* sign bit: (h&0x8000)<<16 -> bit 31; never use (int)(1<<31) (UB on 32-bit int) */
+			u = ((ulong)(h & 0x8000) << 16) | ((ulong)0xff << 23);
 			return u32asf(u);
 		}
 		return 0.0f / 0.0f;
 	}
 
 	e = exp - 15 + 127;
-	u = (ulong)(sign << 31) | ((ulong)e << 23) | ((ulong)frac << 13);
+	u = ((ulong)(h & 0x8000) << 16) | ((ulong)e << 23) | ((ulong)frac << 13);
 	return u32asf(u);
 }
 
@@ -768,8 +768,8 @@ loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp, char *err, int nerr)
 			return -1;
 		}
 		for(i = 0; i < QK4_0 / 2; i++){
-			tp->dst[b * QK4_0 + i] = d * ((qs[i] & 0x0f) - 8);
-			tp->dst[b * QK4_0 + i + QK4_0 / 2] = d * ((qs[i] >> 4) - 8);
+			tp->dst[b * QK4_0 + i] = d * (float)((int)(qs[i] & 0x0f) - 8);
+			tp->dst[b * QK4_0 + i + QK4_0 / 2] = d * (float)((int)(qs[i] >> 4) - 8);
 		}
 	}
 	return 0;
