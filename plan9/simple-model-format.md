@@ -5,14 +5,14 @@ The educational loader in `plan9/loader-simple.c` reads a fixed binary layout.
 Header:
 
 - 4 bytes magic: `P9DM`
-- `uint32 version`
-- `uint32 vocab_size`
-- `uint32 dim`
-- `uint32 hidden_dim`
-- `uint32 n_layers`
-- `uint32 n_heads`
-- `uint32 n_kv_heads`
-- `uint32 seq_len`
+- `unsigned version`
+- `unsigned vocab_size`
+- `unsigned dim`
+- `unsigned hidden_dim`
+- `unsigned n_layers`
+- `unsigned n_heads`
+- `unsigned n_kv_heads`
+- `unsigned seq_len`
 - `float rms_eps`
 
 Tensor order after the header:
