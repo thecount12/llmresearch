@@ -25,11 +25,13 @@ enum {
 enum {
 	GGMLTypeF32 = 0,
 	GGMLTypeF16 = 1,
-	GGMLTypeQ4_0 = 2
+	GGMLTypeQ4_0 = 2,
+	GGMLTypeQ8_0 = 8
 };
 
 enum {
-	QK4_0 = 32
+	QK4_0 = 32,
+	QK8_0 = 32
 };
 
 struct GGUFInfo {
@@ -62,6 +64,7 @@ struct GGUFMap {
 	int ffn_up;
 	int unknown;
 	int q4_0;
+	int q8_0;
 	int unsupported;
 	ulong first_type;
 	char first_name[96];
@@ -491,6 +494,10 @@ marktype(GGUFMap *gm, char *name, ulong ggml_type)
 		gm->q4_0++;
 		return;
 	}
+	if(ggml_type == GGMLTypeQ8_0){
+		gm->q8_0++;
+		return;
+	}
 	gm->unsupported++;
 	if(gm->first_type == 0){
 		gm->first_type = ggml_type;
@@ -719,6 +726,35 @@ loadq40tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
 }
 
 static int
+loadq80tensor(int fd, vlong data_base, GGUFTensorPlan *tp)
+{
+	uvlong blocks, b;
+	ushort dh;
+	uchar qs[QK8_0];
+	float d;
+	int i;
+	schar q;
+
+	if(tp->count % QK8_0 != 0)
+		return -1;
+	if(seek(fd, data_base + (vlong)tp->off, 0) < 0)
+		return -1;
+	blocks = tp->count / QK8_0;
+	for(b = 0; b < blocks; b++){
+		if(readu16(fd, &dh) < 0)
+			return -1;
+		if(readfull9(fd, qs, sizeof qs) < 0)
+			return -1;
+		d = f16tof32(dh);
+		for(i = 0; i < QK8_0; i++){
+			q = (schar)qs[i];
+			tp->dst[b * QK8_0 + i] = d * q;
+		}
+	}
+	return 0;
+}
+
+static int
 loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp)
 {
 	int i;
@@ -735,6 +771,10 @@ loadmappedtensors(int fd, vlong data_base, GGUFLoadPlan *gp)
 			break;
 		case GGMLTypeQ4_0:
 			if(loadq40tensor(fd, data_base, &gp->items[i]) < 0)
+				return -1;
+			break;
+		case GGMLTypeQ8_0:
+			if(loadq80tensor(fd, data_base, &gp->items[i]) < 0)
 				return -1;
 			break;
 		default:
@@ -879,8 +919,8 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 
 	free(gp.items);
 	snprint(err, nerr,
-		"gguf loaded: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d q4_0=%d",
+		"gguf loaded: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d q4_0=%d q8_0=%d",
 		gi.architecture, gi.version, gi.tensor_count, gi.kv_count, gi.dim,
-		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gp.tied_output, gm.q4_0);
+		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gp.tied_output, gm.q4_0, gm.q8_0);
 	return 0;
 }
