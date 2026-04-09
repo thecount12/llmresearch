@@ -69,37 +69,55 @@ utf8_first_cp(uchar *p, ulong *cp, int *nout)
 }
 
 /*
- * HuggingFace BPE / SentencePiece: map first codepoint to ASCII so output is
- * readable even when the terminal is not UTF-8 (avoids mojibake like Âł for Ġ).
- * U+0120 Ġ, U+2581 ▁ — word/space; U+010A Ċ — newline; U+00A0 NBSP — space.
+ * HuggingFace BPE / SentencePiece: replace every known whitespace / newline
+ * UTF-8 sequence in the piece with ASCII (not only the first codepoint), so
+ * strings like "ĠĠ" or "Ġword" do not leave raw UTF-8 that shows as mojibake
+ * (e.g. Âł) on non-UTF-8 terminals. Other UTF-8 is passed through with write().
  */
 static void
 emit_token_str_pretty(char *s)
 {
-	uchar *p;
+	uchar *q;
 	ulong cp;
 	int n;
 
 	if(s == nil)
 		return;
-	p = (uchar*)s;
-	if(utf8_first_cp(p, &cp, &n) < 0){
-		fprint(1, "%s", s);
-		return;
+	q = (uchar*)s;
+	while(*q){
+		if(q[0] == 0xc4 && q[1] == 0xa0){
+			fprint(1, " ");
+			q += 2;
+			continue;
+		}
+		if(q[0] == 0xc4 && q[1] == 0x8a){
+			fprint(1, "\n");
+			q += 2;
+			continue;
+		}
+		if(q[0] == 0xe2 && q[1] == 0x96 && q[2] == 0x81){
+			fprint(1, " ");
+			q += 3;
+			continue;
+		}
+		if(q[0] == 0xc2 && q[1] == 0xa0){
+			fprint(1, " ");
+			q += 2;
+			continue;
+		}
+		if(q[0] < 0x80){
+			fprint(1, "%c", q[0]);
+			q++;
+			continue;
+		}
+		if(utf8_first_cp(q, &cp, &n) >= 0){
+			write(1, q, n);
+			q += n;
+			continue;
+		}
+		fprint(1, "%c", (uchar)q[0]);
+		q++;
 	}
-	if(cp == 0x120 || cp == 0x2581 || cp == 0xA0){
-		fprint(1, " ");
-		if(p[n] != 0)
-			fprint(1, "%s", (char*)(p+n));
-		return;
-	}
-	if(cp == 0x10A){
-		fprint(1, "\n");
-		if(p[n] != 0)
-			fprint(1, "%s", (char*)(p+n));
-		return;
-	}
-	fprint(1, "%s", s);
 }
 
 static void
