@@ -1,29 +1,29 @@
-# GGUF First Step
+# GGUF loader (`loader-gguf.c`)
 
-The current `plan9/loader-gguf.c` is a parser skeleton.
+The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offsets, **dequantizes** supported GGML types into `float`, maps tensors into `Model`, and loads **`tokenizer.ggml.tokens`** into `Model.token_str` for display.
 
-What it does now:
+## Supported
 
-- opens a `.gguf`
-- validates the `GGUF` magic
-- reads the header
-- parses metadata key/value entries
-- walks the tensor descriptor table
-- extracts common architecture fields when present
+- **Metadata**: `general.architecture`, `general.alignment`, dimensions, vocab, context, etc.
+- **GGML types**: F32, F16, Q4_0, Q8_0 (others fail with a clear error).
+- **Tokenizer**: `tokenizer.ggml.tokens` as an array of `GGUFString` (per-token UTF-8 strings).
+- **Tied embeddings**: if there is no separate output weight, copies `token_embd` into `wcls`.
 
-What it does not do yet:
+## CLI (`main.c` / `lumen`)
 
-- load tensor data into `Model`
-- dequantize GGML/GGUF tensor formats
-- map model tensor names into `LayerWeights`
-- run a real GGUF checkpoint end-to-end
+- **`-m path`**: model file (`.gguf` or `.p9m` / `.bin` simple format).
+- **`-v`**: stderr summary (loader kind, dims, vocab string count).
+- **`-g`**: stderr top-8 logits each generation step (before sampling).
+- **`-a`**: “pretty” token display: maps common HF-style UTF-8 pieces (`Ġ` → space, `Ċ` → newline, `▁` → space) when emitting `token_str` strings.
 
-At this stage, a command like:
+## Limitations
+
+- **Prompt encoding**: the runtime feeds the prompt as **raw bytes** (`clamp_token` per character). That matches a **byte-level** toy (`vocab_size ≤ 256`) but is **not** a real BPE/SentencePiece encode for large models. For SmolLM-scale checkpoints, use **`-p ""`** to see unconditional generation, or treat prompt conditioning as approximate until a tokenizer is integrated.
+- **Detokenization**: `-a` only fixes a few common display forms; full decoding is not implemented.
+
+## Quick check
 
 ```sh
-6.out -m model.gguf
+mk
+6.out -m model.gguf -v -a -n 32 -p ""
 ```
-
-should fail with an informative error string describing the parsed GGUF shape, for example architecture, version, tensor count, layer count, head count, vocab size, and context length.
-
-That verifies the file-format path before implementing real tensor loading.

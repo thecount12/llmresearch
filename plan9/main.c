@@ -4,9 +4,10 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-t temp] [-v] [-g]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-t temp] [-v] [-g] [-a]\n", argv0);
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
+	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
 	fprint(2, "       no -m means use the built-in toy model\n");
 	exits("usage");
@@ -22,12 +23,47 @@ clamp_token(int token, int vocab_size)
 	return token % vocab_size;
 }
 
+/*
+ * Common HuggingFace BPE / SentencePiece display forms (UTF-8):
+ * U+0120 Ġ — space or word-initial; U+010A Ċ — newline
+ * U+2581 ▁ — SentencePiece space (Llama-style)
+ */
 static void
-emit_token(Model *m, int token)
+emit_token_str_pretty(char *s)
+{
+	uchar *p;
+
+	if(s == nil)
+		return;
+	p = (uchar*)s;
+	if(p[0] == 0xc4 && p[1] == 0xa0){
+		fprint(1, " ");
+		if(p[2] != 0)
+			fprint(1, "%s", (char*)(p+2));
+		return;
+	}
+	if(p[0] == 0xc4 && p[1] == 0x8a && p[2] == 0){
+		fprint(1, "\n");
+		return;
+	}
+	if(p[0] == 0xe2 && p[1] == 0x96 && p[2] == 0x81){
+		fprint(1, " ");
+		if(p[3] != 0)
+			fprint(1, "%s", (char*)(p+3));
+		return;
+	}
+	fprint(1, "%s", s);
+}
+
+static void
+emit_token(Model *m, int token, int pretty)
 {
 	if(m->token_str != nil && token >= 0 && token < m->cfg.vocab_size
 	    && m->token_str[token] != nil){
-		fprint(1, "%s", m->token_str[token]);
+		if(pretty)
+			emit_token_str_pretty(m->token_str[token]);
+		else
+			fprint(1, "%s", m->token_str[token]);
 		return;
 	}
 	if(token >= 32 && token < 127){
@@ -48,7 +84,7 @@ main(int argc, char **argv)
 	RunState state;
 	char err[512];
 	char *model_path, *prompt;
-	int steps, pos, i, token, next, promptlen, nstr, verbose, dump_logits;
+	int steps, pos, i, token, next, promptlen, nstr, verbose, dump_logits, pretty;
 	float temperature;
 
 	memset(&model, 0, sizeof(model));
@@ -59,6 +95,7 @@ main(int argc, char **argv)
 	temperature = 0.0f;
 	verbose = 0;
 	dump_logits = 0;
+	pretty = 0;
 
 	ARGBEGIN{
 	case 'm':
@@ -78,6 +115,9 @@ main(int argc, char **argv)
 		break;
 	case 'g':
 		dump_logits = 1;
+		break;
+	case 'a':
+		pretty = 1;
 		break;
 	default:
 		usage();
@@ -134,7 +174,7 @@ main(int argc, char **argv)
 			next = sample_with_temperature(state.logits, model.cfg.vocab_size, temperature);
 		else
 			next = greedy_sample(state.logits, model.cfg.vocab_size);
-		emit_token(&model, next);
+		emit_token(&model, next, pretty);
 		token = next;
 		if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
 			sysfatal("forward failed at generation step %d", i);
