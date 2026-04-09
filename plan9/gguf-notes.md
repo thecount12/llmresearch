@@ -14,7 +14,7 @@ The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offset
 - **`-m path`**: model file (`.gguf` or `.p9m` / `.bin` simple format).
 - **`-v`**: stderr summary (loader kind, dims, vocab string count).
 - **`-g`**: stderr top-8 logits each generation step (before sampling).
-- **`-a`**: “pretty” token display: maps common HF-style UTF-8 pieces (`Ġ` → space, `Ċ` → newline, `▁` → space) when emitting `token_str` strings.
+- **`-a`**: “pretty” token display: decodes the **first UTF-8 codepoint** of each piece and maps common HF/SentencePiece codepoints to **ASCII** (`U+0120` Ġ, `U+2581` ▁, `U+00A0` NBSP → space; `U+010A` Ċ → newline). That avoids mojibake (e.g. `Âł`) on terminals that are not UTF-8. Remaining text is printed as in the file (may still be UTF-8).
 
 ## Limitations
 

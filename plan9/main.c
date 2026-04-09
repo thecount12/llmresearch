@@ -24,32 +24,79 @@ clamp_token(int token, int vocab_size)
 }
 
 /*
- * Common HuggingFace BPE / SentencePiece display forms (UTF-8):
- * U+0120 Ġ — space or word-initial; U+010A Ċ — newline
- * U+2581 ▁ — SentencePiece space (Llama-style)
+ * Decode first UTF-8 codepoint at p; returns 0 on success, -1 if invalid/truncated.
+ */
+static int
+utf8_first_cp(uchar *p, ulong *cp, int *nout)
+{
+	uchar c;
+
+	c = p[0];
+	if(c < 0x80){
+		*cp = c;
+		*nout = 1;
+		return 0;
+	}
+	if((c & 0xe0) == 0xc0){
+		if(p[1] == 0)
+			return -1;
+		*cp = ((ulong)(c & 0x1f) << 6) | (ulong)(p[1] & 0x3f);
+		if(*cp < 0x80)
+			return -1;
+		*nout = 2;
+		return 0;
+	}
+	if((c & 0xf0) == 0xe0){
+		if(p[1] == 0 || p[2] == 0)
+			return -1;
+		*cp = ((ulong)(c & 0x0f) << 12) | ((ulong)(p[1] & 0x3f) << 6) | (ulong)(p[2] & 0x3f);
+		if(*cp < 0x800)
+			return -1;
+		*nout = 3;
+		return 0;
+	}
+	if((c & 0xf8) == 0xf0){
+		if(p[1] == 0 || p[2] == 0 || p[3] == 0)
+			return -1;
+		*cp = ((ulong)(c & 0x07) << 18) | ((ulong)(p[1] & 0x3f) << 12)
+			| ((ulong)(p[2] & 0x3f) << 6) | (ulong)(p[3] & 0x3f);
+		if(*cp < 0x10000 || *cp > 0x10ffff)
+			return -1;
+		*nout = 4;
+		return 0;
+	}
+	return -1;
+}
+
+/*
+ * HuggingFace BPE / SentencePiece: map first codepoint to ASCII so output is
+ * readable even when the terminal is not UTF-8 (avoids mojibake like Âł for Ġ).
+ * U+0120 Ġ, U+2581 ▁ — word/space; U+010A Ċ — newline; U+00A0 NBSP — space.
  */
 static void
 emit_token_str_pretty(char *s)
 {
 	uchar *p;
+	ulong cp;
+	int n;
 
 	if(s == nil)
 		return;
 	p = (uchar*)s;
-	if(p[0] == 0xc4 && p[1] == 0xa0){
-		fprint(1, " ");
-		if(p[2] != 0)
-			fprint(1, "%s", (char*)(p+2));
+	if(utf8_first_cp(p, &cp, &n) < 0){
+		fprint(1, "%s", s);
 		return;
 	}
-	if(p[0] == 0xc4 && p[1] == 0x8a && p[2] == 0){
+	if(cp == 0x120 || cp == 0x2581 || cp == 0xA0){
+		fprint(1, " ");
+		if(p[n] != 0)
+			fprint(1, "%s", (char*)(p+n));
+		return;
+	}
+	if(cp == 0x10A){
 		fprint(1, "\n");
-		return;
-	}
-	if(p[0] == 0xe2 && p[1] == 0x96 && p[2] == 0x81){
-		fprint(1, " ");
-		if(p[3] != 0)
-			fprint(1, "%s", (char*)(p+3));
+		if(p[n] != 0)
+			fprint(1, "%s", (char*)(p+n));
 		return;
 	}
 	fprint(1, "%s", s);
