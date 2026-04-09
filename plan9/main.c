@@ -4,13 +4,199 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-t temp] [-v] [-g] [-a]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-v] [-g] [-a]\n", argv0);
+	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
+	fprint(2, "       -B  with -P: read int32 little-endian (4 bytes per id), not text\n");
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
 	fprint(2, "       no -m means use the built-in toy model\n");
 	exits("usage");
+}
+
+static int
+readfull_local(int fd, void *buf, int n)
+{
+	uchar *p;
+	int m, got;
+
+	p = buf;
+	got = 0;
+	while(got < n){
+		m = read(fd, p + got, n - got);
+		if(m <= 0)
+			return -1;
+		got += m;
+	}
+	return 0;
+}
+
+/*
+ * Read entire file (max ~1MB); caller must free. Returns nil on error.
+ */
+static char *
+read_file_all(char *path, char *err, int nerr)
+{
+	int fd;
+	vlong len;
+	char *buf;
+
+	fd = open(path, OREAD);
+	if(fd < 0){
+		snprint(err, nerr, "open %s failed", path);
+		return nil;
+	}
+	len = seek(fd, 0, 2);
+	if(len < 0){
+		snprint(err, nerr, "seek %s failed", path);
+		close(fd);
+		return nil;
+	}
+	if(len > 1<<20){
+		snprint(err, nerr, "file too large: %s", path);
+		close(fd);
+		return nil;
+	}
+	if(seek(fd, 0, 0) < 0){
+		snprint(err, nerr, "rewind %s failed", path);
+		close(fd);
+		return nil;
+	}
+	buf = malloc((ulong)len + 1);
+	if(buf == nil){
+		snprint(err, nerr, "malloc failed");
+		close(fd);
+		return nil;
+	}
+	if(readfull_local(fd, buf, (int)len) < 0){
+		snprint(err, nerr, "read %s failed", path);
+		free(buf);
+		close(fd);
+		return nil;
+	}
+	close(fd);
+	buf[len] = 0;
+	return buf;
+}
+
+/*
+ * Parse integers from buf into ids[0..maxn-1]. Lines starting with # are skipped.
+ * Returns count, or -1 on syntax error.
+ */
+static int
+parse_prompt_ids(char *buf, int *ids, int maxn, char *err, int nerr)
+{
+	char *p;
+	int n, v, sign, d;
+
+	n = 0;
+	p = buf;
+	while(*p){
+		while(*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')
+			p++;
+		if(*p == 0)
+			break;
+		if(*p == '#'){
+			while(*p && *p != '\n')
+				p++;
+			continue;
+		}
+		sign = 1;
+		if(*p == '-'){
+			sign = -1;
+			p++;
+		}
+		if(*p < '0' || *p > '9'){
+			snprint(err, nerr, "bad token id near: %.40s", p);
+			return -1;
+		}
+		v = 0;
+		while(*p >= '0' && *p <= '9'){
+			d = *p - '0';
+			if(v > (2147483647 - d) / 10){
+				snprint(err, nerr, "token id overflow");
+				return -1;
+			}
+			v = v * 10 + d;
+			p++;
+		}
+		if(n >= maxn){
+			snprint(err, nerr, "too many prompt ids (max %d)", maxn);
+			return -1;
+		}
+		ids[n++] = sign * v;
+	}
+	return n;
+}
+
+static int
+load_i32_le(uchar *p)
+{
+	unsigned u;
+
+	u = (unsigned)p[0] | ((unsigned)p[1] << 8) | ((unsigned)p[2] << 16) | ((unsigned)p[3] << 24);
+	return (int)u;
+}
+
+/*
+ * Binary prompt file: raw int32 little-endian, 4 bytes per id. Returns count or -1.
+ */
+static int
+load_prompt_ids_binary(char *path, int *ids, int maxn, char *err, int nerr)
+{
+	int fd, i, n;
+	vlong len;
+	uchar *buf;
+
+	fd = open(path, OREAD);
+	if(fd < 0){
+		snprint(err, nerr, "open %s failed", path);
+		return -1;
+	}
+	len = seek(fd, 0, 2);
+	if(len < 0){
+		snprint(err, nerr, "seek %s failed", path);
+		close(fd);
+		return -1;
+	}
+	if(len == 0){
+		close(fd);
+		return 0;
+	}
+	if(len % 4 != 0){
+		snprint(err, nerr, "binary -P file size must be a multiple of 4 (int32 LE)");
+		close(fd);
+		return -1;
+	}
+	n = len / 4;
+	if(n > maxn){
+		snprint(err, nerr, "too many prompt ids (max %d)", maxn);
+		close(fd);
+		return -1;
+	}
+	if(seek(fd, 0, 0) < 0){
+		snprint(err, nerr, "rewind %s failed", path);
+		close(fd);
+		return -1;
+	}
+	buf = malloc((ulong)len);
+	if(buf == nil){
+		snprint(err, nerr, "malloc failed");
+		close(fd);
+		return -1;
+	}
+	if(readfull_local(fd, buf, (int)len) < 0){
+		snprint(err, nerr, "read %s failed", path);
+		free(buf);
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	for(i = 0; i < n; i++)
+		ids[i] = load_i32_le(buf + i * 4);
+	free(buf);
+	return n;
 }
 
 static int
@@ -148,19 +334,24 @@ main(int argc, char **argv)
 	Model model;
 	RunState state;
 	char err[512];
-	char *model_path, *prompt;
-	int steps, pos, i, token, next, promptlen, nstr, verbose, dump_logits, pretty;
+	char *model_path, *prompt, *prompt_file;
+	int *prompt_ids;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, nstr, verbose, dump_logits, pretty, bin_prompt;
 	float temperature;
 
 	memset(&model, 0, sizeof(model));
 	memset(&state, 0, sizeof(state));
 	model_path = nil;
 	prompt = "";
+	prompt_file = nil;
+	prompt_ids = nil;
+	n_prompt_ids = 0;
 	steps = 32;
 	temperature = 0.0f;
 	verbose = 0;
 	dump_logits = 0;
 	pretty = 0;
+	bin_prompt = 0;
 
 	ARGBEGIN{
 	case 'm':
@@ -171,6 +362,12 @@ main(int argc, char **argv)
 		break;
 	case 'p':
 		prompt = EARGF(usage());
+		break;
+	case 'P':
+		prompt_file = EARGF(usage());
+		break;
+	case 'B':
+		bin_prompt = 1;
 		break;
 	case 't':
 		temperature = atof(EARGF(usage()));
@@ -188,12 +385,36 @@ main(int argc, char **argv)
 		usage();
 	}ARGEND
 
+	if(bin_prompt && prompt_file == nil)
+		sysfatal("-B requires -P");
+
 	if(model_path != nil){
 		if(load_model_auto(&model, model_path, err, sizeof err) < 0)
 			sysfatal("%s", err);
 	}else{
 		if(init_toy_model(&model, err, sizeof err) < 0)
 			sysfatal("%s", err);
+	}
+
+	if(prompt_file != nil){
+		char *pbuf;
+
+		prompt_ids = malloc(model.cfg.seq_len * sizeof(int));
+		if(prompt_ids == nil)
+			sysfatal("malloc failed");
+		if(bin_prompt){
+			n_prompt_ids = load_prompt_ids_binary(prompt_file, prompt_ids, model.cfg.seq_len, err, sizeof err);
+			if(n_prompt_ids < 0)
+				sysfatal("%s", err);
+		}else{
+			pbuf = read_file_all(prompt_file, err, sizeof err);
+			if(pbuf == nil)
+				sysfatal("%s", err);
+			n_prompt_ids = parse_prompt_ids(pbuf, prompt_ids, model.cfg.seq_len, err, sizeof err);
+			free(pbuf);
+			if(n_prompt_ids < 0)
+				sysfatal("%s", err);
+		}
 	}
 
 	if(verbose){
@@ -207,6 +428,9 @@ main(int argc, char **argv)
 			fprint(2, "token_str entries: %d / %d\n", nstr, model.cfg.vocab_size);
 		}else
 			fprint(2, "token_str: (nil)\n");
+		if(prompt_file != nil)
+			fprint(2, "prompt: %d token ids from %s%s (-P overrides -p)\n", n_prompt_ids, prompt_file,
+				bin_prompt ? " (binary int32 LE)" : " (ASCII)");
 	}
 
 	if(alloc_run_state(&state, &model.cfg, err, sizeof err) < 0)
@@ -215,18 +439,32 @@ main(int argc, char **argv)
 
 	pos = 0;
 	token = clamp_token(' ', model.cfg.vocab_size);
-	promptlen = strlen(prompt);
-	for(i = 0; i < promptlen && pos < model.cfg.seq_len; i++){
-		token = clamp_token((uchar)prompt[i], model.cfg.vocab_size);
-		if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
-			sysfatal("forward failed at prompt token %d", pos);
-		pos++;
-	}
-
-	if(promptlen == 0){
-		if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
-			sysfatal("forward failed");
-		pos++;
+	if(prompt_file != nil){
+		if(n_prompt_ids > 0){
+			for(i = 0; i < n_prompt_ids && pos < model.cfg.seq_len; i++){
+				token = clamp_token(prompt_ids[i], model.cfg.vocab_size);
+				if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+					sysfatal("forward failed at prompt token %d", pos);
+				pos++;
+			}
+		}else{
+			if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+				sysfatal("forward failed");
+			pos++;
+		}
+	}else{
+		promptlen = strlen(prompt);
+		for(i = 0; i < promptlen && pos < model.cfg.seq_len; i++){
+			token = clamp_token((uchar)prompt[i], model.cfg.vocab_size);
+			if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+				sysfatal("forward failed at prompt token %d", pos);
+			pos++;
+		}
+		if(promptlen == 0){
+			if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+				sysfatal("forward failed");
+			pos++;
+		}
 	}
 
 	for(i = 0; i < steps && pos < model.cfg.seq_len; i++){
@@ -248,6 +486,7 @@ main(int argc, char **argv)
 	fprint(1, "\n");
 
 	free_run_state(&state);
+	free(prompt_ids);
 	free_model(&model);
 	exits(nil);
 }
