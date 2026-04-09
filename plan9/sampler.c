@@ -40,3 +40,36 @@ sample_with_temperature(float *logits, int n, float temperature)
 	}
 	return n - 1;
 }
+
+void
+dump_logits_topk(int fd, float *logits, int n, int k)
+{
+	int round, j, u;
+	int picked[8];
+	int besti;
+	int nk;
+
+	if(logits == nil || n <= 0)
+		return;
+	nk = k;
+	if(nk > 8)
+		nk = 8;
+	if(nk > n)
+		nk = n;
+	for(round = 0; round < nk; round++){
+		besti = -1;
+		for(j = 0; j < n; j++){
+			for(u = 0; u < round; u++)
+				if(picked[u] == j)
+					goto skipj;
+			if(besti < 0 || logits[j] > logits[besti])
+				besti = j;
+		skipj:;
+		}
+		if(besti < 0)
+			break;
+		picked[round] = besti;
+		fprint(fd, " %d:%g", besti, logits[besti]);
+	}
+	fprint(fd, "\n");
+}

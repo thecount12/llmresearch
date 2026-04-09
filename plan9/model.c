@@ -134,6 +134,12 @@ free_model(Model *m)
 			free(lw->w3);
 		}
 	}
+	if(m->token_str != nil){
+		for(i = 0; i < m->cfg.vocab_size; i++)
+			if(m->token_str[i] != nil)
+				free(m->token_str[i]);
+		free(m->token_str);
+	}
 	free(m->token_embedding_table);
 	free(m->layers);
 	free(m->rms_final_weight);

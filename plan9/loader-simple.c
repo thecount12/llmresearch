@@ -108,6 +108,7 @@ load_model_simple(Model *m, char *path, char *err, int nerr)
 	if(read_tensor(fd, m->wcls, cfg.vocab_size * cfg.dim) < 0) goto Short;
 
 	close(fd);
+	m->loader_kind = LoaderSimple;
 	return 0;
 
 Short:

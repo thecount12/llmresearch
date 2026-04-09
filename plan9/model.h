@@ -43,6 +43,8 @@ struct Model {
 	float *rms_final_weight;
 	float *wcls;
 	int owns_memory;
+	int loader_kind;
+	char **token_str;	/* GGUF tokenizer.ggml.tokens; nil if not loaded */
 };
 
 struct KVCache {
@@ -92,5 +94,6 @@ void rope_apply(float *q, float *k, int pos, Config *cfg);
 int transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int nerr);
 int greedy_sample(float *logits, int n);
 int sample_with_temperature(float *logits, int n, float temperature);
+void dump_logits_topk(int fd, float *logits, int n, int k);
 
 #endif

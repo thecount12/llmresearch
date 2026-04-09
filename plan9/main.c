@@ -4,7 +4,9 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-t temp]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-t temp] [-v] [-g]\n", argv0);
+	fprint(2, "       -v  verbose (config / loader on stderr)\n");
+	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
 	fprint(2, "       no -m means use the built-in toy model\n");
 	exits("usage");
 }
@@ -20,8 +22,13 @@ clamp_token(int token, int vocab_size)
 }
 
 static void
-emit_token(int token)
+emit_token(Model *m, int token)
 {
+	if(m->token_str != nil && token >= 0 && token < m->cfg.vocab_size
+	    && m->token_str[token] != nil){
+		fprint(1, "%s", m->token_str[token]);
+		return;
+	}
 	if(token >= 32 && token < 127){
 		fprint(1, "%c", token);
 		return;
@@ -40,7 +47,7 @@ main(int argc, char **argv)
 	RunState state;
 	char err[512];
 	char *model_path, *prompt;
-	int steps, pos, i, token, next, promptlen;
+	int steps, pos, i, token, next, promptlen, nstr, verbose, dump_logits;
 	float temperature;
 
 	memset(&model, 0, sizeof(model));
@@ -49,6 +56,8 @@ main(int argc, char **argv)
 	prompt = "";
 	steps = 32;
 	temperature = 0.0f;
+	verbose = 0;
+	dump_logits = 0;
 
 	ARGBEGIN{
 	case 'm':
@@ -63,6 +72,12 @@ main(int argc, char **argv)
 	case 't':
 		temperature = atof(EARGF(usage()));
 		break;
+	case 'v':
+		verbose = 1;
+		break;
+	case 'g':
+		dump_logits = 1;
+		break;
 	default:
 		usage();
 	}ARGEND
@@ -73,6 +88,19 @@ main(int argc, char **argv)
 	}else{
 		if(init_toy_model(&model, err, sizeof err) < 0)
 			sysfatal("%s", err);
+	}
+
+	if(verbose){
+		fprint(2, "loader_kind=%d vocab=%d dim=%d layers=%d heads=%d kv_heads=%d seq_len=%d\n",
+			model.loader_kind, model.cfg.vocab_size, model.cfg.dim,
+			model.cfg.n_layers, model.cfg.n_heads, model.cfg.n_kv_heads, model.cfg.seq_len);
+		if(model.token_str != nil){
+			for(i = 0, nstr = 0; i < model.cfg.vocab_size; i++)
+				if(model.token_str[i] != nil)
+					nstr++;
+			fprint(2, "token_str entries: %d / %d\n", nstr, model.cfg.vocab_size);
+		}else
+			fprint(2, "token_str: (nil)\n");
 	}
 
 	if(alloc_run_state(&state, &model.cfg, err, sizeof err) < 0)
@@ -96,11 +124,15 @@ main(int argc, char **argv)
 	}
 
 	for(i = 0; i < steps && pos < model.cfg.seq_len; i++){
+		if(dump_logits){
+			fprint(2, "logits top-8 step %d:", i);
+			dump_logits_topk(2, state.logits, model.cfg.vocab_size, 8);
+		}
 		if(temperature > 0.0f)
 			next = sample_with_temperature(state.logits, model.cfg.vocab_size, temperature);
 		else
 			next = greedy_sample(state.logits, model.cfg.vocab_size);
-		emit_token(next);
+		emit_token(&model, next);
 		token = next;
 		if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
 			sysfatal("forward failed at generation step %d", i);

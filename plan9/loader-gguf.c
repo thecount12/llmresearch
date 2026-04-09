@@ -47,6 +47,8 @@ struct GGUFInfo {
 	uvlong n_kv_heads;
 	uvlong seq_len;
 	ulong alignment;
+	char **vocab_tokens;
+	uvlong vocab_tokens_n;
 };
 
 struct GGUFMap {
@@ -376,6 +378,21 @@ checkdims2(ulong ndims, uvlong *dims, uvlong d0, uvlong d1)
 }
 
 static void
+free_vocab_gi(GGUFInfo *gi)
+{
+	uvlong i;
+
+	if(gi == nil || gi->vocab_tokens == nil)
+		return;
+	for(i = 0; i < gi->vocab_tokens_n; i++)
+		if(gi->vocab_tokens[i] != nil)
+			free(gi->vocab_tokens[i]);
+	free(gi->vocab_tokens);
+	gi->vocab_tokens = nil;
+	gi->vocab_tokens_n = 0;
+}
+
+static void
 setinfo_u64(GGUFInfo *gi, char *key, uvlong val)
 {
 	int nkey;
@@ -463,15 +480,32 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 		if(strcmp(key, "tokenizer.ggml.tokens") == 0){
 			ulong elem_type;
 			uvlong n, i;
+			char **toks;
+			char *one;
 
 			if(readu32(fd, &elem_type) < 0)
 				return -1;
 			if(readu64(fd, &n) < 0)
 				return -1;
+			if(elem_type != GGUFString)
+				return -1;
 			gi->vocab_size = n;
-			for(i = 0; i < n; i++)
-				if(skipvalue(fd, elem_type) < 0)
+			toks = mallocz(n * sizeof(char*), 1);
+			if(toks == nil)
+				return -1;
+			for(i = 0; i < n; i++){
+				if(readstr(fd, &one) < 0){
+					while(i > 0){
+						i--;
+						free(toks[i]);
+					}
+					free(toks);
 					return -1;
+				}
+				toks[i] = one;
+			}
+			gi->vocab_tokens = toks;
+			gi->vocab_tokens_n = n;
 			return 0;
 		}
 		return skiparray(fd);
@@ -488,14 +522,18 @@ parse_metadata(int fd, GGUFInfo *gi)
 	ulong type;
 
 	for(i = 0; i < gi->kv_count; i++){
-		if(readstr(fd, &key) < 0)
+		if(readstr(fd, &key) < 0){
+			free_vocab_gi(gi);
 			return -1;
+		}
 		if(readu32(fd, &type) < 0){
 			free(key);
+			free_vocab_gi(gi);
 			return -1;
 		}
 		if(parse_metadata_value(fd, gi, key, type) < 0){
 			free(key);
+			free_vocab_gi(gi);
 			return -1;
 		}
 		free(key);
@@ -919,9 +957,14 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	cfg.rms_eps = 1e-5f;
 
 	if(alloc_model(m, &cfg, err, nerr) < 0){
+		free_vocab_gi(&gi);
 		close(fd);
 		return -1;
 	}
+	m->loader_kind = LoaderGGUF;
+	m->token_str = gi.vocab_tokens;
+	gi.vocab_tokens = nil;
+	gi.vocab_tokens_n = 0;
 
 	gp.cap = 3 + cfg.n_layers * 9;
 	gp.items = mallocz(gp.cap * sizeof(GGUFTensorPlan), 1);
