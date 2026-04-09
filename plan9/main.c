@@ -7,6 +7,7 @@ usage(void)
 	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-t temp] [-v] [-g]\n", argv0);
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
+	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
 	fprint(2, "       no -m means use the built-in toy model\n");
 	exits("usage");
 }
@@ -125,7 +126,8 @@ main(int argc, char **argv)
 
 	for(i = 0; i < steps && pos < model.cfg.seq_len; i++){
 		if(dump_logits){
-			fprint(2, "logits top-8 step %d:", i);
+			/* Leading \\n so stderr lines do not glue to stdout tokens on one tty line. */
+			fprint(2, "\nlogits top-8 step %d:", i);
 			dump_logits_topk(2, state.logits, model.cfg.vocab_size, 8);
 		}
 		if(temperature > 0.0f)

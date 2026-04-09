@@ -14,7 +14,7 @@ On Plan 9, build the runtime:
 mk
 ```
 
-Run with the generated model file:
+Run with the generated model file (**`-m` is required**; a bare `toy.p9m` argument is ignored and the built-in toy is used):
 
 ```sh
 ./lumen -m toy.p9m -p hello -n 32
