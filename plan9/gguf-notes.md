@@ -40,6 +40,36 @@ python3 encode_prompt_hf.py --binary -o hello.bin "hello world"
 
 **Lux** in this repo (e.g. `smollm.lux`) is only for **downloading** GGUFs, not for tokenization. There is no Lux tokenizer for SmolLM here.
 
+## Quickstart: SmolLM on Plan 9
+
+1. **Build** (on Plan 9, from `plan9/`):
+
+   ```sh
+   mk
+   ```
+
+2. **Encode the prompt on a host** (Python + `transformers`; PyTorch **not** required for tokenizer-only):
+
+   ```sh
+   pip install transformers  # or your env; torch optional
+   python3 encode_prompt_hf.py -m HuggingFaceTB/SmolLM-135M -o hello.tok "hello world"
+   cat hello.tok
+   ```
+
+   Every id must be in **0 .. 49151** (SmolLM `vocab_size` 49152). If you see a typo like **`218120`** instead of **`28120`**, fix the file — out-of-range ids are wrapped with `%` and **break** conditioning.
+
+3. **Copy** `hello.tok` to the Plan 9 machine (same directory as `6.out` or pass a full path to **`-P`**).
+
+4. **Run** (adjust `-n` / `-t` as you like):
+
+   ```sh
+   6.out -m SmolLM-135M.Q4_0.gguf -P hello.tok -n 64 -v -a -t 0.85
+   ```
+
+   **`-v`**: loader + prompt id count on stderr. **`-a`**: readable spaces/newlines from common HF UTF-8 pieces. **`-t`**: sampling temperature (`0` = greedy).
+
+5. **Hugging Face Hub** (optional): set **`HF_TOKEN`** for higher rate limits when downloading the tokenizer the first time. **Do not** paste tokens into chat, commits, or public issues — **revoke** any token that was exposed and create a new one.
+
 ## Limitations
 
 - **`-p` string encoding**: without **`-P`**, the runtime feeds the prompt as **raw bytes** (`clamp_token` per character). That matches a **byte-level** toy (`vocab_size ≤ 256`) but is **not** a real BPE/SentencePiece encode for large models. Use **`-P`** with `encode_prompt_hf.py` (or any tool that writes ids) for correct conditioning.
