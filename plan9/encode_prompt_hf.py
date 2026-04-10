@@ -63,11 +63,20 @@ def main() -> None:
 
     tok = AutoTokenizer.from_pretrained(args.model)
     if args.chat:
-        ids = tok.apply_chat_template(
+        raw = tok.apply_chat_template(
             [{"role": "user", "content": args.text}],
             tokenize=True,
             add_generation_prompt=True,
         )
+        # Newer transformers may return BatchEncoding/dict (keys input_ids, attention_mask).
+        # Iterating that dict and joining would write "input_ids attention_mask" — invalid for lumen -P.
+        if hasattr(raw, "input_ids"):
+            ids = raw["input_ids"]
+        else:
+            ids = raw
+        if hasattr(ids, "tolist"):
+            ids = ids.tolist()
+        ids = [int(x) for x in ids]
     else:
         ids = tok.encode(
             args.text,
