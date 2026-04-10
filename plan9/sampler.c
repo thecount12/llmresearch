@@ -18,6 +18,12 @@ greedy_sample(float *logits, int n)
 	return best;
 }
 
+void
+sampler_seed(ulong seed)
+{
+	srand((long)seed);
+}
+
 int
 sample_with_temperature(float *logits, int n, float temperature)
 {

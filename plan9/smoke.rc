@@ -1,0 +1,15 @@
+#!/bin/rc
+# Regression smoke: run built lumen (or 6.out); exit non-zero on failure.
+# Optional $1: path to a model (e.g. .gguf); default is the built-in toy model.
+bin=./lumen
+if(! test -x $bin)
+	bin=./6.out
+if(! test -x $bin){
+	echo 'smoke.rc: no ./lumen or ./6.out — run mk in this directory first' >[1=2]
+	exit 'fail'
+}
+if(! ~ $#* 0)
+	$bin -m $1 -n 1 -v
+if not
+	$bin -n 1 -v
+exit $status

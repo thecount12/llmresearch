@@ -15,3 +15,6 @@ HFILES=common.h\
 BIN=$home/bin/$objtype
 
 </sys/src/cmd/mkone
+
+smoke:V: $TARG
+	./$TARG -n 1 -v

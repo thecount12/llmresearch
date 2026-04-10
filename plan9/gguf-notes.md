@@ -14,7 +14,10 @@ The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offset
 - **`-m path`**: model file (`.gguf` or `.p9m` / `.bin` simple format).
 - **`-v`**: stderr summary (loader kind, dims, vocab string count).
 - **`-g`**: stderr top-8 logits each generation step (before sampling).
+- **`-s seed`**: seed the RNG used for **`-t`** sampling (`nrand` / `srand`); omit for default seeding.
 - **`-a`**: “pretty” token display: scans **each piece** and replaces **every** known HF/SentencePiece UTF-8 sequence with **ASCII** (`C4 A0` Ġ, `E2 96 81` ▁, `C2 A0` NBSP → space; `C4 8A` Ċ → newline). Other UTF-8 in the piece is passed through unchanged (may still look wrong on non-UTF-8 terminals).
+
+**Streaming**: stdout uses `fprint` / `vfprint`, which flush the format buffer to the fd after each call (no libc `FILE*` buffering). Token output is not held across `fprint` calls.
 
 ## Pre-tokenized prompts (`-P`)
 
@@ -56,7 +59,7 @@ python3 encode_prompt_hf.py --binary -o hello.bin "hello world"
    cat hello.tok
    ```
 
-   Every id must be in **0 .. 49151** (SmolLM `vocab_size` 49152). If you see a typo like **`218120`** instead of **`28120`**, fix the file — out-of-range ids are wrapped with `%` and **break** conditioning.
+   Every id must be in **0 .. 49151** (SmolLM `vocab_size` 49152). If you see a typo like **`218120`** instead of **`28120`**, fix the file — **`-P`** rejects any id outside **`[0, vocab_size)`** with a clear error (no silent wrap).
 
 3. **Copy** `hello.tok` to the Plan 9 machine (same directory as `6.out` or pass a full path to **`-P`**).
 
@@ -81,3 +84,7 @@ python3 encode_prompt_hf.py --binary -o hello.bin "hello world"
 mk
 6.out -m model.gguf -v -a -n 32 -p ""
 ```
+
+## Smoke test
+
+After **`mk`**, **`mk smoke`** runs the built binary for one step on the default toy model (`-n 1 -v`). From the shell you can also run **`./smoke.rc`** (Plan 9) or **`./smoke.sh`** (optional, on Unix hosts). Pass a **`.gguf`** path as the first argument to smoke the loader on a real file instead of the toy model.

@@ -4,9 +4,10 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-v] [-g] [-a]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-a]\n", argv0);
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
 	fprint(2, "       -B  with -P: read int32 little-endian (4 bytes per id), not text\n");
+	fprint(2, "       -s  seed RNG for temperature sampling (Plan 9 nrand/srand)\n");
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
@@ -209,6 +210,17 @@ clamp_token(int token, int vocab_size)
 	return token % vocab_size;
 }
 
+static void
+validate_prompt_ids(int *ids, int n, int vocab_size, char *path)
+{
+	int i;
+
+	for(i = 0; i < n; i++)
+		if(ids[i] < 0 || ids[i] >= vocab_size)
+			sysfatal("prompt id %d out of range [0,%d): %d (file %s)",
+				i, vocab_size, ids[i], path);
+}
+
 /*
  * Decode first UTF-8 codepoint at p; returns 0 on success, -1 if invalid/truncated.
  */
@@ -336,7 +348,8 @@ main(int argc, char **argv)
 	char err[512];
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
-	int steps, pos, i, token, next, promptlen, n_prompt_ids, nstr, verbose, dump_logits, pretty, bin_prompt;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, nstr, verbose, dump_logits, pretty, bin_prompt, have_seed;
+	ulong seed;
 	float temperature;
 
 	memset(&model, 0, sizeof(model));
@@ -352,6 +365,8 @@ main(int argc, char **argv)
 	dump_logits = 0;
 	pretty = 0;
 	bin_prompt = 0;
+	have_seed = 0;
+	seed = 0;
 
 	ARGBEGIN{
 	case 'm':
@@ -371,6 +386,10 @@ main(int argc, char **argv)
 		break;
 	case 't':
 		temperature = atof(EARGF(usage()));
+		break;
+	case 's':
+		seed = strtoul(EARGF(usage()), nil, 0);
+		have_seed = 1;
 		break;
 	case 'v':
 		verbose = 1;
@@ -396,6 +415,9 @@ main(int argc, char **argv)
 			sysfatal("%s", err);
 	}
 
+	if(have_seed)
+		sampler_seed(seed);
+
 	if(prompt_file != nil){
 		char *pbuf;
 
@@ -415,6 +437,7 @@ main(int argc, char **argv)
 			if(n_prompt_ids < 0)
 				sysfatal("%s", err);
 		}
+		validate_prompt_ids(prompt_ids, n_prompt_ids, model.cfg.vocab_size, prompt_file);
 	}
 
 	if(verbose){
@@ -442,7 +465,7 @@ main(int argc, char **argv)
 	if(prompt_file != nil){
 		if(n_prompt_ids > 0){
 			for(i = 0; i < n_prompt_ids && pos < model.cfg.seq_len; i++){
-				token = clamp_token(prompt_ids[i], model.cfg.vocab_size);
+				token = prompt_ids[i];
 				if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
 					sysfatal("forward failed at prompt token %d", pos);
 				pos++;
