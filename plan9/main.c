@@ -4,7 +4,8 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-a]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-a]\n", argv0);
+	fprint(2, "       -c  max context length (KV cache / attention); default caps large GGUF seq_len to 4096; -c 0 = use model max\n");
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
 	fprint(2, "       -B  with -P: read int32 little-endian (4 bytes per id), not text\n");
 	fprint(2, "       -s  seed RNG for temperature sampling (Plan 9 nrand/srand)\n");
@@ -349,6 +350,8 @@ main(int argc, char **argv)
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
 	int steps, pos, i, token, next, promptlen, n_prompt_ids, nstr, verbose, dump_logits, pretty, bin_prompt, have_seed;
+	int cap_ctx;	/* -1 = default policy; 0 = full model seq_len; >0 = cap */
+	int orig_seq;
 	ulong seed;
 	float temperature;
 
@@ -367,10 +370,14 @@ main(int argc, char **argv)
 	bin_prompt = 0;
 	have_seed = 0;
 	seed = 0;
+	cap_ctx = -1;
 
 	ARGBEGIN{
 	case 'm':
 		model_path = EARGF(usage());
+		break;
+	case 'c':
+		cap_ctx = atoi(EARGF(usage()));
 		break;
 	case 'n':
 		steps = atoi(EARGF(usage()));
@@ -415,6 +422,24 @@ main(int argc, char **argv)
 			sysfatal("%s", err);
 	}
 
+	orig_seq = model.cfg.seq_len;
+	if(cap_ctx == -1){
+		if(orig_seq > 4096)
+			model.cfg.seq_len = 4096;
+	}else if(cap_ctx == 0)
+		model.cfg.seq_len = orig_seq;
+	else if(cap_ctx > 0){
+		if(cap_ctx > orig_seq)
+			model.cfg.seq_len = orig_seq;
+		else
+			model.cfg.seq_len = cap_ctx;
+	}else
+		usage();
+
+	if(verbose && model.cfg.seq_len != orig_seq)
+		fprint(2, "seq_len: using %d (model metadata %d; -c 0 for full, -c N to set)\n",
+			model.cfg.seq_len, orig_seq);
+
 	if(have_seed)
 		sampler_seed(seed);
 
@@ -456,6 +481,15 @@ main(int argc, char **argv)
 		if(prompt_file != nil)
 			fprint(2, "prompt: %d token ids from %s%s (-P overrides -p)\n", n_prompt_ids, prompt_file,
 				bin_prompt ? " (binary int32 LE)" : " (ASCII)");
+	}
+
+	if(prompt_file != nil && n_prompt_ids + steps > model.cfg.seq_len)
+		sysfatal("prompt (%d tok) + steps (%d) exceeds seq_len=%d; raise -c or shorten -n",
+			n_prompt_ids, steps, model.cfg.seq_len);
+	if(prompt_file == nil){
+		promptlen = strlen(prompt);
+		if((promptlen > 0 ? promptlen : 1) + steps > model.cfg.seq_len)
+			sysfatal("prompt + steps exceeds seq_len=%d; raise -c or shorten -n", model.cfg.seq_len);
 	}
 
 	if(alloc_run_state(&state, &model.cfg, err, sizeof err) < 0)

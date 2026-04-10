@@ -3,6 +3,7 @@
 Generate a token-id file for lumen -P (ASCII) or -P file -B (binary int32 LE):
 
   python3 encode_prompt_hf.py -o hello.tok "hello world"
+  python3 encode_prompt_hf.py --chat -m Qwen/Qwen2.5-0.5B-Instruct -o hello.tok "Hello"
   6.out -m model.gguf -P hello.tok -n 64 -a
 
   python3 encode_prompt_hf.py --binary -o hello.bin "hello world"
@@ -47,6 +48,11 @@ def main() -> None:
         action="store_true",
         help="call encode(..., add_special_tokens=True)",
     )
+    ap.add_argument(
+        "--chat",
+        action="store_true",
+        help="use apply_chat_template (recommended for *-Instruct* models)",
+    )
     args = ap.parse_args()
 
     try:
@@ -56,10 +62,17 @@ def main() -> None:
         sys.exit(1)
 
     tok = AutoTokenizer.from_pretrained(args.model)
-    ids = tok.encode(
-        args.text,
-        add_special_tokens=bool(args.add_special),
-    )
+    if args.chat:
+        ids = tok.apply_chat_template(
+            [{"role": "user", "content": args.text}],
+            tokenize=True,
+            add_generation_prompt=True,
+        )
+    else:
+        ids = tok.encode(
+            args.text,
+            add_special_tokens=bool(args.add_special),
+        )
     if args.binary:
         with open(args.out, "wb") as f:
             for tid in ids:

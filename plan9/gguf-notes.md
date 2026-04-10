@@ -14,6 +14,7 @@ The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offset
 ## CLI (`main.c` / `lumen`)
 
 - **`-m path`**: model file (`.gguf` or `.p9m` / `.bin` simple format).
+- **`-c N`**: **max context** (KV cache / attention length). Large GGUFs often advertise **seq_len 32k+**; allocating that on Plan 9 can OOM (`Killed: Insufficient physical memory`). **Default** (if **`-c`** omitted): cap to **4096** when metadata **seq_len > 4096**. **`-c 0`**: use the model’s full metadata **seq_len** (only if you have enough RAM). **`-c 2048`** etc. sets an explicit cap.
 - **`-v`**: stderr summary (loader kind, dims, vocab string count).
 - **`-g`**: stderr top-8 logits each generation step (before sampling).
 - **`-s seed`**: seed the RNG used for **`-t`** sampling (`nrand` / `srand`); omit for default seeding.
