@@ -1,0 +1,21 @@
+#!/bin/rc
+# Download the F16 GGUF. The URL must be .../resolve/main/<file>.gguf — not
+# https://huggingface.co alone (that saves HTML → "bad gguf magic").
+#
+# Verify: xd -b1 Qwen2.5-0.5B-Instruct-f16.gguf | sed 1q → starts 47 47 55 46 (GGUF).
+# Gated repos: hf_token=... ./getqwen.rc (script adds Bearer if set).
+
+file=Qwen2.5-0.5B-Instruct-f16.gguf
+url='https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-f16.gguf'
+
+echo downloading $file ...
+if(! ~ $#hf_token 0)
+	hget -o $file -r 'Authorization: Bearer '^$hf_token $url
+if not
+	hget -o $file $url
+
+if(! test -f $file){
+	echo 'download failed' >[1=2]
+	exit 'fail'
+}
+echo done: $file
