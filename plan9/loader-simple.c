@@ -83,6 +83,9 @@ load_model_simple(Model *m, char *path, char *err, int nerr)
 	cfg.n_kv_heads = hdr.n_kv_heads;
 	cfg.seq_len = hdr.seq_len;
 	cfg.rms_eps = hdr.rms_eps;
+	cfg.rope_freq_base = 10000.0f;
+	cfg.sliding_window = 0;
+	cfg.arch = ArchLlama;
 
 	if(alloc_model(m, &cfg, err, nerr) < 0){
 		close(fd);

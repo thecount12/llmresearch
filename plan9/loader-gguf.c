@@ -49,6 +49,9 @@ struct GGUFInfo {
 	ulong alignment;
 	char **vocab_tokens;
 	uvlong vocab_tokens_n;
+	float rope_freq_base;	/* 0 = not in KV */
+	float rms_eps_kv;	/* 0 = not in KV */
+	uvlong sliding_window;
 };
 
 struct GGUFMap {
@@ -422,6 +425,26 @@ setinfo_u64(GGUFInfo *gi, char *key, uvlong val)
 		gi->n_kv_heads = val;
 		return;
 	}
+	if(nkey >= strlen(".attention.sliding_window") && strcmp(key + nkey - strlen(".attention.sliding_window"), ".attention.sliding_window") == 0){
+		gi->sliding_window = val;
+		return;
+	}
+}
+
+static void
+setinfo_float(GGUFInfo *gi, char *key, double val)
+{
+	int nkey;
+
+	nkey = strlen(key);
+	if(nkey >= strlen(".rope.freq_base") && strcmp(key + nkey - strlen(".rope.freq_base"), ".rope.freq_base") == 0){
+		gi->rope_freq_base = (float)val;
+		return;
+	}
+	if(nkey >= strlen(".attention.layer_norm_rms_epsilon") && strcmp(key + nkey - strlen(".attention.layer_norm_rms_epsilon"), ".attention.layer_norm_rms_epsilon") == 0){
+		gi->rms_eps_kv = (float)val;
+		return;
+	}
 }
 
 static int
@@ -458,7 +481,10 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 		setinfo_u64(gi, key, u32);
 		return 0;
 	case GGUFFloat32:
-		return readf32(fd, &f32);
+		if(readf32(fd, &f32) < 0)
+			return -1;
+		setinfo_float(gi, key, f32);
+		return 0;
 	case GGUFUint64:
 	case GGUFInt64:
 		if(readu64(fd, &u64) < 0)
@@ -468,7 +494,10 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 		setinfo_u64(gi, key, u64);
 		return 0;
 	case GGUFFloat64:
-		return readf64(fd, &f64);
+		if(readf64(fd, &f64) < 0)
+			return -1;
+		setinfo_float(gi, key, f64);
+		return 0;
 	case GGUFString:
 		if(readstr(fd, &s) < 0)
 			return -1;
@@ -595,6 +624,10 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 
 	cfg = &m->cfg;
 	kdim = (cfg->dim / cfg->n_heads) * cfg->n_kv_heads;
+
+	/* Qwen2 GGUF may ship precomputed RoPE tables; forward uses rope.freq_base instead. */
+	if(strcmp(name, "rope_freqs.weight") == 0)
+		return 0;
 
 	if(strcmp(name, "token_embd.weight") == 0){
 		if(!checkdims2(ndims, dims, cfg->dim, cfg->vocab_size))
@@ -954,7 +987,16 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	cfg.n_heads = gi.n_heads;
 	cfg.n_kv_heads = gi.n_kv_heads;
 	cfg.seq_len = gi.seq_len;
-	cfg.rms_eps = 1e-5f;
+	cfg.rms_eps = gi.rms_eps_kv;
+	cfg.rope_freq_base = gi.rope_freq_base;
+	if(gi.sliding_window > (uvlong)0x7fffffff)
+		cfg.sliding_window = 0x7fffffff;
+	else
+		cfg.sliding_window = (int)gi.sliding_window;
+
+	cfg.arch = ArchLlama;
+	if(strstr(gi.architecture, "qwen2") != nil || strstr(gi.architecture, "Qwen2") != nil)
+		cfg.arch = ArchQwen2;
 
 	if(alloc_model(m, &cfg, err, nerr) < 0){
 		free_vocab_gi(&gi);

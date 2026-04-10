@@ -42,8 +42,18 @@ validate_config(Config *cfg, char *err, int nerr)
 		seterr(err, nerr, "n_heads not divisible by n_kv_heads");
 		return -1;
 	}
-	if(cfg->rms_eps <= 0)
-		cfg->rms_eps = 1e-5f;
+	if(cfg->rms_eps <= 0){
+		if(cfg->arch == ArchQwen2)
+			cfg->rms_eps = 1e-6f;
+		else
+			cfg->rms_eps = 1e-5f;
+	}
+	if(cfg->rope_freq_base <= 0){
+		if(cfg->arch == ArchQwen2)
+			cfg->rope_freq_base = 1000000.0f;
+		else
+			cfg->rope_freq_base = 10000.0f;
+	}
 	return 0;
 }
 
@@ -248,6 +258,9 @@ init_toy_model(Model *m, char *err, int nerr)
 	cfg.n_kv_heads = 4;
 	cfg.seq_len = 64;
 	cfg.rms_eps = 1e-5f;
+	cfg.rope_freq_base = 10000.0f;
+	cfg.sliding_window = 0;
+	cfg.arch = ArchLlama;
 
 	if(alloc_model(m, &cfg, err, nerr) < 0)
 		return -1;

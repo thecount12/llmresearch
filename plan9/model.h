@@ -13,6 +13,11 @@ enum {
 	LoaderGGUF
 };
 
+enum {
+	ArchLlama,
+	ArchQwen2
+};
+
 struct Config {
 	int vocab_size;
 	int dim;
@@ -22,6 +27,9 @@ struct Config {
 	int n_kv_heads;
 	int seq_len;
 	float rms_eps;
+	float rope_freq_base;	/* RoPE θ base: Llama ~1e4, Qwen2 ~1e6 */
+	int sliding_window;	/* 0 = full causal; else limit KV positions */
+	int arch;		/* ArchLlama, ArchQwen2, … */
 };
 
 struct LayerWeights {
@@ -86,7 +94,7 @@ void accum(float *dst, float *src, int n);
 void scale(float *x, float s, int n);
 float dot(float *a, float *b, int n);
 void softmax(float *x, int n);
-void rmsnorm(float *out, float *x, float *weight, int n);
+void rmsnorm(float *out, float *x, float *weight, int n, float eps);
 void matvec(float *out, float *w, float *x, int nout, int nin);
 float silu(float x);
 void rope_apply(float *q, float *k, int pos, Config *cfg);

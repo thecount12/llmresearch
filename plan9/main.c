@@ -441,9 +441,11 @@ main(int argc, char **argv)
 	}
 
 	if(verbose){
-		fprint(2, "loader_kind=%d vocab=%d dim=%d layers=%d heads=%d kv_heads=%d seq_len=%d\n",
-			model.loader_kind, model.cfg.vocab_size, model.cfg.dim,
+		fprint(2, "loader_kind=%d arch=%d vocab=%d dim=%d layers=%d heads=%d kv_heads=%d seq_len=%d\n",
+			model.loader_kind, model.cfg.arch, model.cfg.vocab_size, model.cfg.dim,
 			model.cfg.n_layers, model.cfg.n_heads, model.cfg.n_kv_heads, model.cfg.seq_len);
+		fprint(2, "rope_freq_base=%g rms_eps=%g sliding_window=%d\n",
+			model.cfg.rope_freq_base, model.cfg.rms_eps, model.cfg.sliding_window);
 		if(model.token_str != nil){
 			for(i = 0, nstr = 0; i < model.cfg.vocab_size; i++)
 				if(model.token_str[i] != nil)

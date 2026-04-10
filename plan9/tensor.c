@@ -70,13 +70,11 @@ softmax(float *x, int n)
 }
 
 void
-rmsnorm(float *out, float *x, float *weight, int n)
+rmsnorm(float *out, float *x, float *weight, int n, float eps)
 {
 	int i;
 	float ss, scalev;
-	float eps;
 
-	eps = 1e-5f;
 	ss = 0.0f;
 	for(i = 0; i < n; i++)
 		ss += x[i] * x[i];
@@ -120,7 +118,7 @@ rope_apply(float *q, float *k, int pos, Config *cfg)
 	for(h = 0; h < cfg->n_heads; h++){
 		for(i = 0; i + 1 < head_dim; i += 2){
 			theta = (float)i / (float)head_dim;
-			freq = pow(10000.0f, -theta);
+			freq = pow(cfg->rope_freq_base > 0 ? cfg->rope_freq_base : 10000.0f, -theta);
 			c = cos(pos * freq);
 			s = sin(pos * freq);
 

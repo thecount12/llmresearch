@@ -21,6 +21,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	float *kcache, *vcache, *qhead, *kvec, *vvec;
 	float score, inv_scale;
 	int l, i, t, h, dim, head_dim, n_heads, n_kv_heads, kv_repeat, kdim, kvh;
+	int t_start, natt, ti;
 
 	USED(err);
 	USED(nerr);
@@ -43,7 +44,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	for(l = 0; l < cfg->n_layers; l++){
 		lw = &m->layers[l];
 
-		rmsnorm(s->xb, s->x, lw->rms_att_weight, dim);
+		rmsnorm(s->xb, s->x, lw->rms_att_weight, dim, cfg->rms_eps);
 		matvec(s->q, lw->wq, s->xb, dim, dim);
 		matvec(s->k, lw->wk, s->xb, kdim, dim);
 		matvec(s->v, lw->wv, s->xb, kdim, dim);
@@ -57,21 +58,31 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		vec_zero(s->xb2, dim);
 		inv_scale = 1.0f / sqrt((float)head_dim);
 
+		t_start = 0;
+		if(cfg->sliding_window > 0){
+			t_start = pos + 1 - cfg->sliding_window;
+			if(t_start < 0)
+				t_start = 0;
+		}
+		natt = pos + 1 - t_start;
+
 		for(h = 0; h < n_heads; h++){
 			qhead = s->q + h * head_dim;
 			kvh = h / kv_repeat;
 
-			for(t = 0; t <= pos; t++){
+			for(ti = 0; ti < natt; ti++){
+				t = t_start + ti;
 				kvec = s->cache.k + (l * cfg->seq_len + t) * kdim + kvh * head_dim;
 				score = dot(qhead, kvec, head_dim) * inv_scale;
 				s->att[h * cfg->seq_len + t] = score;
 			}
-			softmax(s->att + h * cfg->seq_len, pos + 1);
+			softmax(s->att + h * cfg->seq_len + t_start, natt);
 
 			for(i = 0; i < head_dim; i++)
 				s->xb2[h * head_dim + i] = 0.0f;
 
-			for(t = 0; t <= pos; t++){
+			for(ti = 0; ti < natt; ti++){
+				t = t_start + ti;
 				vvec = s->cache.v + (l * cfg->seq_len + t) * kdim + kvh * head_dim;
 				score = s->att[h * cfg->seq_len + t];
 				for(i = 0; i < head_dim; i++)
@@ -82,7 +93,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		matvec(s->xb, lw->wo, s->xb2, dim, dim);
 		accum(s->x, s->xb, dim);
 
-		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim);
+		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim, cfg->rms_eps);
 		matvec(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
 		matvec(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
 		for(i = 0; i < cfg->hidden_dim; i++)
@@ -91,7 +102,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		accum(s->x, s->xb, dim);
 	}
 
-	rmsnorm(s->xb, s->x, m->rms_final_weight, dim);
+	rmsnorm(s->xb, s->x, m->rms_final_weight, dim, cfg->rms_eps);
 	matvec(s->logits, m->wcls, s->xb, cfg->vocab_size, dim);
 	return 0;
 }

@@ -5,6 +5,8 @@ The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offset
 ## Supported
 
 - **Metadata**: `general.architecture`, `general.alignment`, dimensions, vocab, context, etc.
+- **Architecture dispatch**: **`general.architecture`** containing **`qwen2`** selects **Qwen2** defaults (RMS ε **1e-6**, RoPE base **1e6**) when those keys are absent; values from the file override (suffixes **`.rope.freq_base`**, **`.attention.layer_norm_rms_epsilon`**, **`.attention.sliding_window`**).
+- **Qwen2 GGUF**: Same **`blk.*`** tensor names as Llama-class maps (plus optional **`rope_freqs.weight`**, ignored — RoPE is computed from **`rope.freq_base`**). **Sliding-window** attention uses a single global **`sliding_window`** from metadata (not per-layer patterns).
 - **GGML types**: F32, F16, Q4_0, Q8_0 (others fail with a clear error).
 - **Tokenizer**: `tokenizer.ggml.tokens` as an array of `GGUFString` (per-token UTF-8 strings).
 - **Tied embeddings**: if there is no separate output weight, copies `token_embd` into `wcls`.
