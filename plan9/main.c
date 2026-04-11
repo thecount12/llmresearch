@@ -13,6 +13,7 @@ usage(void)
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
+	fprint(2, "            token pieces are buffered so UTF-8 bytes split across tokens decode correctly\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
 	fprint(2, "       no -m means use the built-in toy model\n");
 	exits("usage");
@@ -224,100 +225,169 @@ validate_prompt_ids(int *ids, int n, int vocab_size, char *path)
 }
 
 /*
- * Decode first UTF-8 codepoint at p; returns 0 on success, -1 if invalid/truncated.
+ * Bounded UTF-8: 0 = one complete character of *nout bytes; -1 = need more
+ * bytes; -2 = invalid lead/continuation (caller should drop 1 byte).
  */
 static int
-utf8_first_cp(uchar *p, ulong *cp, int *nout)
+utf8_peek_len(uchar *p, int len, int *nout)
 {
 	uchar c;
+	ulong cp;
 
+	if(len <= 0)
+		return -1;
 	c = p[0];
 	if(c < 0x80){
-		*cp = c;
 		*nout = 1;
 		return 0;
 	}
 	if((c & 0xe0) == 0xc0){
-		if(p[1] == 0)
+		if(len < 2)
 			return -1;
-		*cp = ((ulong)(c & 0x1f) << 6) | (ulong)(p[1] & 0x3f);
-		if(*cp < 0x80)
-			return -1;
+		if((p[1] & 0xc0) != 0x80)
+			return -2;
+		cp = ((ulong)(c & 0x1f) << 6) | (ulong)(p[1] & 0x3f);
+		if(cp < 0x80)
+			return -2;
 		*nout = 2;
 		return 0;
 	}
 	if((c & 0xf0) == 0xe0){
-		if(p[1] == 0 || p[2] == 0)
+		if(len < 3)
 			return -1;
-		*cp = ((ulong)(c & 0x0f) << 12) | ((ulong)(p[1] & 0x3f) << 6) | (ulong)(p[2] & 0x3f);
-		if(*cp < 0x800)
-			return -1;
+		if((p[1] & 0xc0) != 0x80 || (p[2] & 0xc0) != 0x80)
+			return -2;
+		cp = ((ulong)(c & 0x0f) << 12) | ((ulong)(p[1] & 0x3f) << 6) | (ulong)(p[2] & 0x3f);
+		if(cp < 0x800 || (cp >= 0xd800 && cp <= 0xdfff))
+			return -2;
 		*nout = 3;
 		return 0;
 	}
 	if((c & 0xf8) == 0xf0){
-		if(p[1] == 0 || p[2] == 0 || p[3] == 0)
+		if(len < 4)
 			return -1;
-		*cp = ((ulong)(c & 0x07) << 18) | ((ulong)(p[1] & 0x3f) << 12)
+		if((p[1] & 0xc0) != 0x80 || (p[2] & 0xc0) != 0x80 || (p[3] & 0xc0) != 0x80)
+			return -2;
+		cp = ((ulong)(c & 0x07) << 18) | ((ulong)(p[1] & 0x3f) << 12)
 			| ((ulong)(p[2] & 0x3f) << 6) | (ulong)(p[3] & 0x3f);
-		if(*cp < 0x10000 || *cp > 0x10ffff)
-			return -1;
+		if(cp < 0x10000 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff))
+			return -2;
 		*nout = 4;
 		return 0;
 	}
-	return -1;
+	return -2;
 }
 
+enum {
+	EmitUtf8Max = 65536
+};
+
+static uchar emit_utf8_buf[EmitUtf8Max];
+static int emit_utf8_len;
+
 /*
- * HuggingFace BPE / SentencePiece: replace every known whitespace / newline
- * UTF-8 sequence in the piece with ASCII (not only the first codepoint), so
- * strings like "ĠĠ" or "Ġword" do not leave raw UTF-8 that shows as mojibake
- * (e.g. Âł) on non-UTF-8 terminals. Other UTF-8 is passed through with write().
+ * HuggingFace BPE: map common space/newline codepoints to ASCII when -a.
+ * q points to one complete UTF-8 codepoint of n bytes (1..4).
  */
 static void
-emit_token_str_pretty(char *s)
+emit_one_codepoint_pretty(uchar *q, int n)
 {
-	uchar *q;
-	ulong cp;
+	if(n == 2 && q[0] == 0xc4 && q[1] == 0xa0){
+		fprint(1, " ");
+		return;
+	}
+	if(n == 2 && q[0] == 0xc4 && q[1] == 0x8a){
+		fprint(1, "\n");
+		return;
+	}
+	if(n == 3 && q[0] == 0xe2 && q[1] == 0x96 && q[2] == 0x81){
+		fprint(1, " ");
+		return;
+	}
+	if(n == 2 && q[0] == 0xc2 && q[1] == 0xa0){
+		fprint(1, " ");
+		return;
+	}
+	if(n == 1 && q[0] < 0x80){
+		fprint(1, "%c", q[0]);
+		return;
+	}
+	write(1, q, n);
+}
+
+static void
+emit_utf8_drain(int pretty)
+{
 	int n;
+	int r;
+
+	for(;;){
+		if(emit_utf8_len <= 0)
+			return;
+		r = utf8_peek_len(emit_utf8_buf, emit_utf8_len, &n);
+		if(r == -1)
+			return;
+		if(r == -2){
+			fprint(1, "%c", emit_utf8_buf[0]);
+			memmove(emit_utf8_buf, emit_utf8_buf + 1, emit_utf8_len - 1);
+			emit_utf8_len--;
+			continue;
+		}
+		if(pretty)
+			emit_one_codepoint_pretty(emit_utf8_buf, n);
+		else
+			write(1, emit_utf8_buf, n);
+		memmove(emit_utf8_buf, emit_utf8_buf + n, emit_utf8_len - n);
+		emit_utf8_len -= n;
+	}
+}
+
+static void
+emit_utf8_append_piece(char *s, int pretty)
+{
+	int l;
+	int cap;
 
 	if(s == nil)
 		return;
-	q = (uchar*)s;
-	while(*q){
-		if(q[0] == 0xc4 && q[1] == 0xa0){
-			fprint(1, " ");
-			q += 2;
-			continue;
+	l = strlen(s);
+	cap = sizeof emit_utf8_buf;
+	while(emit_utf8_len + l > cap){
+		emit_utf8_drain(pretty);
+		if(emit_utf8_len + l > cap){
+			fprint(2, "lumen: warning: UTF-8 emit buffer full; truncating piece\n");
+			l = cap - emit_utf8_len;
+			if(l <= 0)
+				return;
 		}
-		if(q[0] == 0xc4 && q[1] == 0x8a){
-			fprint(1, "\n");
-			q += 2;
-			continue;
-		}
-		if(q[0] == 0xe2 && q[1] == 0x96 && q[2] == 0x81){
-			fprint(1, " ");
-			q += 3;
-			continue;
-		}
-		if(q[0] == 0xc2 && q[1] == 0xa0){
-			fprint(1, " ");
-			q += 2;
-			continue;
-		}
-		if(q[0] < 0x80){
-			fprint(1, "%c", q[0]);
-			q++;
-			continue;
-		}
-		if(utf8_first_cp(q, &cp, &n) >= 0){
-			write(1, q, n);
-			q += n;
-			continue;
-		}
-		fprint(1, "%c", (uchar)q[0]);
-		q++;
 	}
+	memmove(emit_utf8_buf + emit_utf8_len, s, l);
+	emit_utf8_len += l;
+	emit_utf8_drain(pretty);
+}
+
+/* Flush incomplete UTF-8 tail as raw bytes (e.g. before fallback emit or at EOF). */
+static void
+emit_utf8_flush_tail_raw(void)
+{
+	if(emit_utf8_len <= 0)
+		return;
+	write(1, emit_utf8_buf, emit_utf8_len);
+	emit_utf8_len = 0;
+}
+
+static void
+emit_utf8_before_fallback(int pretty)
+{
+	emit_utf8_drain(pretty);
+	emit_utf8_flush_tail_raw();
+}
+
+static void
+emit_utf8_finish(int pretty)
+{
+	emit_utf8_drain(pretty);
+	emit_utf8_flush_tail_raw();
 }
 
 static void
@@ -325,12 +395,10 @@ emit_token(Model *m, int token, int pretty)
 {
 	if(m->token_str != nil && token >= 0 && token < m->cfg.vocab_size
 	    && m->token_str[token] != nil){
-		if(pretty)
-			emit_token_str_pretty(m->token_str[token]);
-		else
-			fprint(1, "%s", m->token_str[token]);
+		emit_utf8_append_piece(m->token_str[token], pretty);
 		return;
 	}
+	emit_utf8_before_fallback(pretty);
 	if(token >= 32 && token < 127){
 		fprint(1, "%c", token);
 		return;
@@ -567,6 +635,7 @@ main(int argc, char **argv)
 			sysfatal("forward failed at generation step %d", i);
 		pos++;
 	}
+	emit_utf8_finish(pretty);
 	fprint(1, "\n");
 
 	free_run_state(&state);
