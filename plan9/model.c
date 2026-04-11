@@ -84,6 +84,15 @@ alloc_layer(LayerWeights *lw, Config *cfg, char *err, int nerr)
 	lw->wk = xalloc(kdim * dim * sizeof(float), err, nerr);
 	lw->wv = xalloc(kdim * dim * sizeof(float), err, nerr);
 	lw->wo = xalloc(dim * dim * sizeof(float), err, nerr);
+	lw->attn_q_norm_weight = nil;
+	lw->attn_k_norm_weight = nil;
+	if(cfg->arch == ArchQwen2){
+		int hd;
+
+		hd = dim / cfg->n_heads;
+		lw->attn_q_norm_weight = xalloc(hd * sizeof(float), err, nerr);
+		lw->attn_k_norm_weight = xalloc(hd * sizeof(float), err, nerr);
+	}
 	lw->rms_ffn_weight = xalloc(dim * sizeof(float), err, nerr);
 	lw->w1 = xalloc(hidden * dim * sizeof(float), err, nerr);
 	lw->w2 = xalloc(dim * hidden * sizeof(float), err, nerr);
@@ -92,6 +101,9 @@ alloc_layer(LayerWeights *lw, Config *cfg, char *err, int nerr)
 	if(lw->rms_att_weight == nil || lw->wq == nil || lw->wk == nil ||
 	   lw->wv == nil || lw->wo == nil || lw->rms_ffn_weight == nil ||
 	   lw->w1 == nil || lw->w2 == nil || lw->w3 == nil)
+		return -1;
+	if(cfg->arch == ArchQwen2 &&
+	   (lw->attn_q_norm_weight == nil || lw->attn_k_norm_weight == nil))
 		return -1;
 	return 0;
 }
@@ -140,6 +152,8 @@ free_model(Model *m)
 			free(lw->wk);
 			free(lw->wv);
 			free(lw->wo);
+			free(lw->attn_q_norm_weight);
+			free(lw->attn_k_norm_weight);
 			free(lw->rms_ffn_weight);
 			free(lw->w1);
 			free(lw->w2);

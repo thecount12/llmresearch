@@ -48,6 +48,16 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		matvec(s->q, lw->wq, s->xb, dim, dim);
 		matvec(s->k, lw->wk, s->xb, kdim, dim);
 		matvec(s->v, lw->wv, s->xb, kdim, dim);
+		if(cfg->arch == ArchQwen2){
+			int kvhi;
+
+			for(h = 0; h < n_heads; h++)
+				rmsnorm(s->q + h * head_dim, s->q + h * head_dim,
+					lw->attn_q_norm_weight, head_dim, cfg->rms_eps);
+			for(kvhi = 0; kvhi < n_kv_heads; kvhi++)
+				rmsnorm(s->k + kvhi * head_dim, s->k + kvhi * head_dim,
+					lw->attn_k_norm_weight, head_dim, cfg->rms_eps);
+		}
 		rope_apply(s->q, s->k, pos, cfg);
 
 		kcache = s->cache.k + (l * cfg->seq_len + pos) * kdim;

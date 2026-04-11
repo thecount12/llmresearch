@@ -44,6 +44,8 @@ struct LayerWeights {
 	float *wk;
 	float *wv;
 	float *wo;
+	float *attn_q_norm_weight;	/* Qwen2: RMS norm per head, length head_dim; nil for Llama */
+	float *attn_k_norm_weight;
 	float *rms_ffn_weight;
 	float *w1;
 	float *w2;

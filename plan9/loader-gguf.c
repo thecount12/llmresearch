@@ -63,6 +63,8 @@ struct GGUFMap {
 	int attn_k;
 	int attn_v;
 	int attn_out;
+	int attn_q_norm;
+	int attn_k_norm;
 	int ffn_norm;
 	int ffn_gate;
 	int ffn_down;
@@ -691,6 +693,26 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 		gm->attn_out++;
 		return addplan(gp, name, m->layers[layer].wo, cfg->dim * cfg->dim, off, ggml_type);
 	}
+	layer = parseblklayer(name, "attn_q_norm.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims1(ndims, dims, cfg->dim / cfg->n_heads))
+			return -1;
+		if(m->layers[layer].attn_q_norm_weight == nil)
+			return -1;
+		marktype(gm, name, ggml_type);
+		gm->attn_q_norm++;
+		return addplan(gp, name, m->layers[layer].attn_q_norm_weight, cfg->dim / cfg->n_heads, off, ggml_type);
+	}
+	layer = parseblklayer(name, "attn_k_norm.weight");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims1(ndims, dims, cfg->dim / cfg->n_heads))
+			return -1;
+		if(m->layers[layer].attn_k_norm_weight == nil)
+			return -1;
+		marktype(gm, name, ggml_type);
+		gm->attn_k_norm++;
+		return addplan(gp, name, m->layers[layer].attn_k_norm_weight, cfg->dim / cfg->n_heads, off, ggml_type);
+	}
 	layer = parseblklayer(name, "ffn_norm.weight");
 	if(layer >= 0 && layer < cfg->n_layers){
 		if(!checkdims1(ndims, dims, cfg->dim))
@@ -772,7 +794,7 @@ parse_tensor_infos(int fd, uvlong n, Model *m, GGUFMap *gm, GGUFLoadPlan *gp)
 }
 
 static int
-hasrequired(GGUFInfo *gi, GGUFMap *gm)
+hasrequired(GGUFInfo *gi, GGUFMap *gm, Config *cfg)
 {
 	if(gm->token_embd < 1 || gm->output_norm < 1)
 		return 0;
@@ -783,6 +805,9 @@ hasrequired(GGUFInfo *gi, GGUFMap *gm)
 	   gm->attn_out < gi->n_layers || gm->ffn_norm < gi->n_layers ||
 	   gm->ffn_gate < gi->n_layers || gm->ffn_down < gi->n_layers ||
 	   gm->ffn_up < gi->n_layers)
+		return 0;
+	if(cfg->arch == ArchQwen2 &&
+	   (gm->attn_q_norm < gi->n_layers || gm->attn_k_norm < gi->n_layers))
 		return 0;
 	return 1;
 }
@@ -1012,7 +1037,7 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	gi.vocab_tokens = nil;
 	gi.vocab_tokens_n = 0;
 
-	gp.cap = 3 + cfg.n_layers * 9;
+	gp.cap = 3 + cfg.n_layers * 11;
 	gp.items = mallocz(gp.cap * sizeof(GGUFTensorPlan), 1);
 	if(gp.items == nil){
 		snprint(err, nerr, "mallocz failed");
@@ -1029,11 +1054,12 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		return -1;
 	}
 
-	if(!hasrequired(&gi, &gm)){
+	if(!hasrequired(&gi, &gm, &m->cfg)){
 		snprint(err, nerr,
-			"gguf parsed but tensor mapping incomplete: arch=%s layers=%llud token_embd=%d output_norm=%d output=%d attn_norm=%d attn_q=%d attn_k=%d attn_v=%d attn_out=%d ffn_norm=%d ffn_gate=%d ffn_down=%d ffn_up=%d unknown=%d",
+			"gguf parsed but tensor mapping incomplete: arch=%s layers=%llud token_embd=%d output_norm=%d output=%d attn_norm=%d attn_q=%d attn_k=%d attn_v=%d attn_out=%d attn_q_norm=%d attn_k_norm=%d ffn_norm=%d ffn_gate=%d ffn_down=%d ffn_up=%d unknown=%d",
 			gi.architecture, gi.n_layers, gm.token_embd, gm.output_norm, gm.output,
 			gm.attn_norm, gm.attn_q, gm.attn_k, gm.attn_v, gm.attn_out,
+			gm.attn_q_norm, gm.attn_k_norm,
 			gm.ffn_norm, gm.ffn_gate, gm.ffn_down, gm.ffn_up, gm.unknown);
 		close(fd);
 		free(gp.items);
