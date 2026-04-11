@@ -121,9 +121,9 @@ rope_apply(float *q, float *k, int pos, Config *cfg)
 	for(h = 0; h < cfg->n_heads; h++){
 		for(ic = 0; ic < half; ic++){
 			/* Same θ schedule as ggml: angle = pos * base^(-2*ic/head_dim) */
-			ang = pos * powf(base, -2.0f * (float)ic / (float)head_dim);
-			c = cosf(ang);
-			s = sinf(ang);
+			ang = pos * pow(base, -2.0f * (float)ic / (float)head_dim);
+			c = cos(ang);
+			s = sin(ang);
 
 			if(cfg->rope_type == RopeNeox){
 				/* GGML_ROPE_TYPE_NEOX: rotate (ic, ic + half) */
