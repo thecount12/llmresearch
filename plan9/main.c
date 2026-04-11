@@ -574,6 +574,8 @@ main(int argc, char **argv)
 		fprint(2, "lumen: warning: -p uses raw bytes as token ids; for Qwen/Llama GGUF use host `encode_prompt_hf.py` and -P\n");
 	if(prompt_file != nil && model.loader_kind == LoaderGGUF)
 		fprint(2, "lumen: note: ids in -P must come from the same tokenizer as this GGUF (e.g. encode_prompt_hf.py -m Qwen/Qwen2.5-0.5B-Instruct for Qwen2.5 GGUF)\n");
+	if(model.loader_kind == LoaderGGUF && model.token_str != nil)
+		fprint(2, "lumen: note: stdout is UTF-8 token text; a non-UTF-8 terminal shows mojibake (ASCII ok, CJK garbled); use UTF-8 drawterm/terminal or redirect to a file\n");
 
 	if(prompt_file != nil && n_prompt_ids + steps > model.cfg.seq_len)
 		sysfatal("prompt (%d tok) + steps (%d) exceeds seq_len=%d; raise -c or shorten -n",
