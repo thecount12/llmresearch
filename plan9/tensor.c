@@ -129,6 +129,58 @@ matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab)
 	}
 }
 
+/*
+ * GGUF attn_{k,v}.weight is [dim, kdim] row-major; PyTorch Linear uses [kdim, dim].
+ * out[i] = sum_r w[r*kdim+i]*x[r].
+ */
+void
+matvec_k_proj_gguf(float *out, float *w, float *x, int kdim, int dim)
+{
+	int i, r;
+	float sum;
+
+	for(i = 0; i < kdim; i++){
+		sum = 0.0f;
+		for(r = 0; r < dim; r++)
+			sum += w[r * kdim + i] * x[r];
+		out[i] = sum;
+	}
+}
+
+/*
+ * GGUF ffn_gate / ffn_up is [dim, hidden]; matmul wants [hidden, dim].
+ */
+void
+matvec_gate_up_gguf(float *out, float *w, float *x, int hidden, int dim)
+{
+	int h, r;
+	float sum;
+
+	for(h = 0; h < hidden; h++){
+		sum = 0.0f;
+		for(r = 0; r < dim; r++)
+			sum += w[r * hidden + h] * x[r];
+		out[h] = sum;
+	}
+}
+
+/*
+ * GGUF ffn_down is [hidden, dim]; matmul wants [dim, hidden].
+ */
+void
+matvec_ffn_down_gguf(float *out, float *w, float *x, int dim, int hidden)
+{
+	int d, h;
+	float sum;
+
+	for(d = 0; d < dim; d++){
+		sum = 0.0f;
+		for(h = 0; h < hidden; h++)
+			sum += w[h * dim + d] * x[h];
+		out[d] = sum;
+	}
+}
+
 float
 silu(float x)
 {

@@ -49,8 +49,13 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 
 		rmsnorm(s->xb, s->x, lw->rms_att_weight, dim, cfg->rms_eps);
 		matvec(s->q, lw->wq, s->xb, dim, dim);
-		matvec(s->k, lw->wk, s->xb, kdim, dim);
-		matvec(s->v, lw->wv, s->xb, kdim, dim);
+		if(m->loader_kind == LoaderGGUF){
+			matvec_k_proj_gguf(s->k, lw->wk, s->xb, kdim, dim);
+			matvec_k_proj_gguf(s->v, lw->wv, s->xb, kdim, dim);
+		}else{
+			matvec(s->k, lw->wk, s->xb, kdim, dim);
+			matvec(s->v, lw->wv, s->xb, kdim, dim);
+		}
 		if(lw->bq != nil){
 			accum(s->q, lw->bq, dim);
 			accum(s->k, lw->bk, kdim);
@@ -102,11 +107,19 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		accum(s->x, s->xb, dim);
 
 		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim, cfg->rms_eps);
-		matvec(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
-		matvec(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
+		if(m->loader_kind == LoaderGGUF){
+			matvec_gate_up_gguf(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
+			matvec_gate_up_gguf(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
+		}else{
+			matvec(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
+			matvec(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
+		}
 		for(i = 0; i < cfg->hidden_dim; i++)
 			s->hb[i] = silu(s->hb[i]) * s->hb2[i];
-		matvec(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
+		if(m->loader_kind == LoaderGGUF)
+			matvec_ffn_down_gguf(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
+		else
+			matvec(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
 		accum(s->x, s->xb, dim);
 	}
 
