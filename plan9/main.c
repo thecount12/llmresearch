@@ -6,6 +6,7 @@ usage(void)
 {
 	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-a]\n", argv0);
 	fprint(2, "       -c  max context length (KV cache / attention); default caps large GGUF seq_len to 4096; -c 0 = use model max\n");
+	fprint(2, "       -p  each byte is a token id (toy / byte-vocab only); for GGUF BPE models use encode_prompt_hf.py → -P\n");
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
 	fprint(2, "       -B  with -P: read int32 little-endian (4 bytes per id), not text\n");
 	fprint(2, "       -s  seed RNG for temperature sampling (Plan 9 nrand/srand)\n");
@@ -483,6 +484,9 @@ main(int argc, char **argv)
 			fprint(2, "prompt: %d token ids from %s%s (-P overrides -p)\n", n_prompt_ids, prompt_file,
 				bin_prompt ? " (binary int32 LE)" : " (ASCII)");
 	}
+
+	if(prompt_file == nil && model.loader_kind == LoaderGGUF && strlen(prompt) > 0)
+		fprint(2, "lumen: warning: -p uses raw bytes as token ids; for Qwen/Llama GGUF use host `encode_prompt_hf.py` and -P\n");
 
 	if(prompt_file != nil && n_prompt_ids + steps > model.cfg.seq_len)
 		sysfatal("prompt (%d tok) + steps (%d) exceeds seq_len=%d; raise -c or shorten -n",
