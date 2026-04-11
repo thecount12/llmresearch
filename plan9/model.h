@@ -107,6 +107,8 @@ float dot(float *a, float *b, int n);
 void softmax(float *x, int n);
 void rmsnorm(float *out, float *x, float *weight, int n, float eps);
 void matvec(float *out, float *w, float *x, int nout, int nin);
+void embed_lookup_gguf(float *dst, float *table, int token, Config *cfg);
+void matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab);
 float silu(float x);
 void rope_apply(float *q, float *k, int pos, Config *cfg);
 

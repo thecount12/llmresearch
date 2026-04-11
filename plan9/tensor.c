@@ -98,6 +98,37 @@ matvec(float *out, float *w, float *x, int nout, int nin)
 	}
 }
 
+/*
+ * GGUF stores token_embd.weight as [dim, vocab] row-major: table[d*vocab + t].
+ * Simple/toy format uses [vocab, dim]: table[t*dim + d].
+ */
+void
+embed_lookup_gguf(float *dst, float *table, int token, Config *cfg)
+{
+	int d, v;
+
+	v = cfg->vocab_size;
+	for(d = 0; d < cfg->dim; d++)
+		dst[d] = table[d * v + token];
+}
+
+/*
+ * GGUF output.weight is [dim, vocab]: logits[v] = sum_d w[d*vocab+v] * x[d].
+ */
+void
+matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab)
+{
+	int v, d;
+	float sum;
+
+	for(v = 0; v < vocab; v++){
+		sum = 0.0f;
+		for(d = 0; d < dim; d++)
+			sum += w[d * vocab + v] * x[d];
+		out[v] = sum;
+	}
+}
+
 float
 silu(float x)
 {

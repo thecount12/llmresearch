@@ -8,7 +8,7 @@ kv_dim(Config *cfg)
 }
 
 static void
-copy_embedding(float *dst, float *table, int token, Config *cfg)
+copy_embedding_simple(float *dst, float *table, int token, Config *cfg)
 {
 	memmove(dst, table + token * cfg->dim, cfg->dim * sizeof(float));
 }
@@ -39,7 +39,10 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	if(pos < 0 || pos >= cfg->seq_len)
 		return -1;
 
-	copy_embedding(s->x, m->token_embedding_table, token, cfg);
+	if(m->loader_kind == LoaderGGUF)
+		embed_lookup_gguf(s->x, m->token_embedding_table, token, cfg);
+	else
+		copy_embedding_simple(s->x, m->token_embedding_table, token, cfg);
 
 	for(l = 0; l < cfg->n_layers; l++){
 		lw = &m->layers[l];
@@ -108,6 +111,9 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	}
 
 	rmsnorm(s->xb, s->x, m->rms_final_weight, dim, cfg->rms_eps);
-	matvec(s->logits, m->wcls, s->xb, cfg->vocab_size, dim);
+	if(m->loader_kind == LoaderGGUF)
+		matvec_logits_gguf(s->logits, m->wcls, s->xb, dim, cfg->vocab_size);
+	else
+		matvec(s->logits, m->wcls, s->xb, cfg->vocab_size, dim);
 	return 0;
 }
