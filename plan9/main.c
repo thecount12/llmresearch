@@ -480,13 +480,32 @@ main(int argc, char **argv)
 			fprint(2, "token_str entries: %d / %d\n", nstr, model.cfg.vocab_size);
 		}else
 			fprint(2, "token_str: (nil)\n");
-		if(prompt_file != nil)
+		if(prompt_file != nil){
 			fprint(2, "prompt: %d token ids from %s%s (-P overrides -p)\n", n_prompt_ids, prompt_file,
 				bin_prompt ? " (binary int32 LE)" : " (ASCII)");
+			if(n_prompt_ids > 0 && model.token_str != nil){
+				int nshow;
+
+				nshow = n_prompt_ids;
+				if(nshow > 6)
+					nshow = 6;
+				for(i = 0; i < nshow; i++){
+					int id;
+
+					id = prompt_ids[i];
+					if(id >= 0 && id < model.cfg.vocab_size && model.token_str[id] != nil)
+						fprint(2, "  prompt[%d] id=%d piece=%s\n", i, id, model.token_str[id]);
+					else
+						fprint(2, "  prompt[%d] id=%d piece=(no string)\n", i, id);
+				}
+			}
+		}
 	}
 
 	if(prompt_file == nil && model.loader_kind == LoaderGGUF && strlen(prompt) > 0)
 		fprint(2, "lumen: warning: -p uses raw bytes as token ids; for Qwen/Llama GGUF use host `encode_prompt_hf.py` and -P\n");
+	if(prompt_file != nil && model.loader_kind == LoaderGGUF)
+		fprint(2, "lumen: note: ids in -P must come from the same tokenizer as this GGUF (e.g. encode_prompt_hf.py -m Qwen/Qwen2.5-0.5B-Instruct for Qwen2.5 GGUF)\n");
 
 	if(prompt_file != nil && n_prompt_ids + steps > model.cfg.seq_len)
 		sysfatal("prompt (%d tok) + steps (%d) exceeds seq_len=%d; raise -c or shorten -n",
