@@ -63,8 +63,9 @@ struct GGUFMap {
 	int attn_k;
 	int attn_v;
 	int attn_out;
-	int attn_q_norm;
-	int attn_k_norm;
+	int attn_q_bias;
+	int attn_k_bias;
+	int attn_v_bias;
 	int ffn_norm;
 	int ffn_gate;
 	int ffn_down;
@@ -693,25 +694,35 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 		gm->attn_out++;
 		return addplan(gp, name, m->layers[layer].wo, cfg->dim * cfg->dim, off, ggml_type);
 	}
-	layer = parseblklayer(name, "attn_q_norm.weight");
+	layer = parseblklayer(name, "attn_q.bias");
 	if(layer >= 0 && layer < cfg->n_layers){
-		if(!checkdims1(ndims, dims, cfg->dim / cfg->n_heads))
+		if(!checkdims1(ndims, dims, cfg->dim))
 			return -1;
-		if(m->layers[layer].attn_q_norm_weight == nil)
+		if(m->layers[layer].bq == nil)
 			return -1;
 		marktype(gm, name, ggml_type);
-		gm->attn_q_norm++;
-		return addplan(gp, name, m->layers[layer].attn_q_norm_weight, cfg->dim / cfg->n_heads, off, ggml_type);
+		gm->attn_q_bias++;
+		return addplan(gp, name, m->layers[layer].bq, cfg->dim, off, ggml_type);
 	}
-	layer = parseblklayer(name, "attn_k_norm.weight");
+	layer = parseblklayer(name, "attn_k.bias");
 	if(layer >= 0 && layer < cfg->n_layers){
-		if(!checkdims1(ndims, dims, cfg->dim / cfg->n_heads))
+		if(!checkdims1(ndims, dims, kdim))
 			return -1;
-		if(m->layers[layer].attn_k_norm_weight == nil)
+		if(m->layers[layer].bk == nil)
 			return -1;
 		marktype(gm, name, ggml_type);
-		gm->attn_k_norm++;
-		return addplan(gp, name, m->layers[layer].attn_k_norm_weight, cfg->dim / cfg->n_heads, off, ggml_type);
+		gm->attn_k_bias++;
+		return addplan(gp, name, m->layers[layer].bk, kdim, off, ggml_type);
+	}
+	layer = parseblklayer(name, "attn_v.bias");
+	if(layer >= 0 && layer < cfg->n_layers){
+		if(!checkdims1(ndims, dims, kdim))
+			return -1;
+		if(m->layers[layer].bv == nil)
+			return -1;
+		marktype(gm, name, ggml_type);
+		gm->attn_v_bias++;
+		return addplan(gp, name, m->layers[layer].bv, kdim, off, ggml_type);
 	}
 	layer = parseblklayer(name, "ffn_norm.weight");
 	if(layer >= 0 && layer < cfg->n_layers){
@@ -794,7 +805,7 @@ parse_tensor_infos(int fd, uvlong n, Model *m, GGUFMap *gm, GGUFLoadPlan *gp)
 }
 
 static int
-hasrequired(GGUFInfo *gi, GGUFMap *gm, Config *cfg)
+hasrequired(GGUFInfo *gi, GGUFMap *gm)
 {
 	if(gm->token_embd < 1 || gm->output_norm < 1)
 		return 0;
@@ -805,9 +816,6 @@ hasrequired(GGUFInfo *gi, GGUFMap *gm, Config *cfg)
 	   gm->attn_out < gi->n_layers || gm->ffn_norm < gi->n_layers ||
 	   gm->ffn_gate < gi->n_layers || gm->ffn_down < gi->n_layers ||
 	   gm->ffn_up < gi->n_layers)
-		return 0;
-	if(cfg->arch == ArchQwen2 &&
-	   (gm->attn_q_norm < gi->n_layers || gm->attn_k_norm < gi->n_layers))
 		return 0;
 	return 1;
 }
@@ -1037,7 +1045,7 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	gi.vocab_tokens = nil;
 	gi.vocab_tokens_n = 0;
 
-	gp.cap = 3 + cfg.n_layers * 11;
+	gp.cap = 3 + cfg.n_layers * 12;
 	gp.items = mallocz(gp.cap * sizeof(GGUFTensorPlan), 1);
 	if(gp.items == nil){
 		snprint(err, nerr, "mallocz failed");
@@ -1054,12 +1062,12 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		return -1;
 	}
 
-	if(!hasrequired(&gi, &gm, &m->cfg)){
+	if(!hasrequired(&gi, &gm)){
 		snprint(err, nerr,
-			"gguf parsed but tensor mapping incomplete: arch=%s layers=%llud token_embd=%d output_norm=%d output=%d attn_norm=%d attn_q=%d attn_k=%d attn_v=%d attn_out=%d attn_q_norm=%d attn_k_norm=%d ffn_norm=%d ffn_gate=%d ffn_down=%d ffn_up=%d unknown=%d",
+			"gguf parsed but tensor mapping incomplete: arch=%s layers=%llud token_embd=%d output_norm=%d output=%d attn_norm=%d attn_q=%d attn_k=%d attn_v=%d attn_out=%d attn_q_bias=%d attn_k_bias=%d attn_v_bias=%d ffn_norm=%d ffn_gate=%d ffn_down=%d ffn_up=%d unknown=%d",
 			gi.architecture, gi.n_layers, gm.token_embd, gm.output_norm, gm.output,
 			gm.attn_norm, gm.attn_q, gm.attn_k, gm.attn_v, gm.attn_out,
-			gm.attn_q_norm, gm.attn_k_norm,
+			gm.attn_q_bias, gm.attn_k_bias, gm.attn_v_bias,
 			gm.ffn_norm, gm.ffn_gate, gm.ffn_down, gm.ffn_up, gm.unknown);
 		close(fd);
 		free(gp.items);
