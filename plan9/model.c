@@ -54,6 +54,8 @@ validate_config(Config *cfg, char *err, int nerr)
 		else
 			cfg->rope_freq_base = 10000.0f;
 	}
+	if(cfg->arch == ArchQwen2)
+		cfg->rope_type = RopeNeox;
 	return 0;
 }
 
@@ -261,6 +263,7 @@ init_toy_model(Model *m, char *err, int nerr)
 	cfg.rope_freq_base = 10000.0f;
 	cfg.sliding_window = 0;
 	cfg.arch = ArchLlama;
+	cfg.rope_type = RopeNormal;
 
 	if(alloc_model(m, &cfg, err, nerr) < 0)
 		return -1;

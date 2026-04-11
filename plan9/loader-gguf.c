@@ -995,8 +995,12 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		cfg.sliding_window = (int)gi.sliding_window;
 
 	cfg.arch = ArchLlama;
-	if(strstr(gi.architecture, "qwen2") != nil || strstr(gi.architecture, "Qwen2") != nil)
+	if(strstr(gi.architecture, "qwen2") != nil || strstr(gi.architecture, "Qwen2") != nil){
 		cfg.arch = ArchQwen2;
+		cfg.rope_type = RopeNeox;
+	}else{
+		cfg.rope_type = RopeNormal;
+	}
 
 	if(alloc_model(m, &cfg, err, nerr) < 0){
 		free_vocab_gi(&gi);

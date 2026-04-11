@@ -107,31 +107,53 @@ silu(float x)
 void
 rope_apply(float *q, float *k, int pos, Config *cfg)
 {
-	int h, i, head_dim, kv_head_dim, kv_repeat, kv_head;
-	float theta, freq, c, s;
+	int h, ic, head_dim, half, kv_head_dim, kv_repeat, kv_head;
+	float base, ang, c, s;
 	float q0, q1, k0, k1;
+	int i0, i1;
 
 	head_dim = cfg->dim / cfg->n_heads;
+	half = head_dim / 2;
 	kv_head_dim = head_dim;
 	kv_repeat = cfg->n_heads / cfg->n_kv_heads;
+	base = cfg->rope_freq_base > 0 ? cfg->rope_freq_base : 10000.0f;
 
 	for(h = 0; h < cfg->n_heads; h++){
-		for(i = 0; i + 1 < head_dim; i += 2){
-			theta = (float)i / (float)head_dim;
-			freq = pow(cfg->rope_freq_base > 0 ? cfg->rope_freq_base : 10000.0f, -theta);
-			c = cos(pos * freq);
-			s = sin(pos * freq);
+		for(ic = 0; ic < half; ic++){
+			/* Same θ schedule as ggml: angle = pos * base^(-2*ic/head_dim) */
+			ang = pos * powf(base, -2.0f * (float)ic / (float)head_dim);
+			c = cosf(ang);
+			s = sinf(ang);
 
-			q0 = q[h * head_dim + i];
-			q1 = q[h * head_dim + i + 1];
-			q[h * head_dim + i] = q0 * c - q1 * s;
-			q[h * head_dim + i + 1] = q0 * s + q1 * c;
+			if(cfg->rope_type == RopeNeox){
+				/* GGML_ROPE_TYPE_NEOX: rotate (ic, ic + half) */
+				i0 = ic;
+				i1 = ic + half;
+				q0 = q[h * head_dim + i0];
+				q1 = q[h * head_dim + i1];
+				q[h * head_dim + i0] = q0 * c - q1 * s;
+				q[h * head_dim + i1] = q0 * s + q1 * c;
 
-			kv_head = h / kv_repeat;
-			k0 = k[kv_head * kv_head_dim + i];
-			k1 = k[kv_head * kv_head_dim + i + 1];
-			k[kv_head * kv_head_dim + i] = k0 * c - k1 * s;
-			k[kv_head * kv_head_dim + i + 1] = k0 * s + k1 * c;
+				kv_head = h / kv_repeat;
+				k0 = k[kv_head * kv_head_dim + i0];
+				k1 = k[kv_head * kv_head_dim + i1];
+				k[kv_head * kv_head_dim + i0] = k0 * c - k1 * s;
+				k[kv_head * kv_head_dim + i1] = k0 * s + k1 * c;
+			}else{
+				/* LLaMA-style: consecutive pairs (2*ic, 2*ic+1) */
+				i0 = 2 * ic;
+				i1 = i0 + 1;
+				q0 = q[h * head_dim + i0];
+				q1 = q[h * head_dim + i1];
+				q[h * head_dim + i0] = q0 * c - q1 * s;
+				q[h * head_dim + i1] = q0 * s + q1 * c;
+
+				kv_head = h / kv_repeat;
+				k0 = k[kv_head * kv_head_dim + i0];
+				k1 = k[kv_head * kv_head_dim + i1];
+				k[kv_head * kv_head_dim + i0] = k0 * c - k1 * s;
+				k[kv_head * kv_head_dim + i1] = k0 * s + k1 * c;
+			}
 		}
 	}
 }

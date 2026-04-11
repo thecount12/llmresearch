@@ -86,6 +86,7 @@ load_model_simple(Model *m, char *path, char *err, int nerr)
 	cfg.rope_freq_base = 10000.0f;
 	cfg.sliding_window = 0;
 	cfg.arch = ArchLlama;
+	cfg.rope_type = RopeNormal;
 
 	if(alloc_model(m, &cfg, err, nerr) < 0){
 		close(fd);

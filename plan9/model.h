@@ -18,6 +18,11 @@ enum {
 	ArchQwen2
 };
 
+enum {
+	RopeNormal = 0,	/* interleaved pairs (i,i+1); LLaMA-style */
+	RopeNeox = 2	/* GPT-NeoX / GGML_ROPE_TYPE_NEOX: pairs (i, i+head_dim/2); Qwen2 */
+};
+
 struct Config {
 	int vocab_size;
 	int dim;
@@ -30,6 +35,7 @@ struct Config {
 	float rope_freq_base;	/* RoPE θ base: Llama ~1e4, Qwen2 ~1e6 */
 	int sliding_window;	/* 0 = full causal; else limit KV positions */
 	int arch;		/* ArchLlama, ArchQwen2, … */
+	int rope_type;		/* RopeNormal or RopeNeox (match GGUF / llama.cpp) */
 };
 
 struct LayerWeights {
