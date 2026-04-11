@@ -113,6 +113,8 @@ alloc_model(Model *m, Config *cfg, char *err, int nerr)
 
 	memset(m, 0, sizeof(*m));
 	m->cfg = *cfg;
+	m->eos_token_id = -1;
+	m->pad_token_id = -1;
 	if(validate_config(&m->cfg, err, nerr) < 0)
 		return -1;
 

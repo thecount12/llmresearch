@@ -62,6 +62,8 @@ struct Model {
 	int owns_memory;
 	int loader_kind;
 	char **token_str;	/* GGUF tokenizer.ggml.tokens; nil if not loaded */
+	int eos_token_id;	/* tokenizer.ggml.eos_token_id from GGUF, or -1 */
+	int pad_token_id;	/* tokenizer.ggml.padding_token_id from GGUF, or -1 */
 };
 
 struct KVCache {
@@ -113,5 +115,6 @@ int greedy_sample(float *logits, int n);
 int sample_with_temperature(float *logits, int n, float temperature);
 void sampler_seed(ulong seed);
 void dump_logits_topk(int fd, float *logits, int n, int k);
+void decode_logits_mask(Model *m, float *logits);
 
 #endif

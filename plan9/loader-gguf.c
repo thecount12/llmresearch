@@ -52,6 +52,8 @@ struct GGUFInfo {
 	float rope_freq_base;	/* 0 = not in KV */
 	float rms_eps_kv;	/* 0 = not in KV */
 	uvlong sliding_window;
+	int eos_token_id;	/* tokenizer.ggml.eos_token_id; -1 if absent */
+	int pad_token_id;	/* tokenizer.ggml.padding_token_id; -1 if absent */
 };
 
 struct GGUFMap {
@@ -481,6 +483,10 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 			gi->alignment = u32;
 		if(strcmp(key, "tokenizer.ggml.tokens") == 0)
 			gi->vocab_size = u32;
+		if(strcmp(key, "tokenizer.ggml.eos_token_id") == 0)
+			gi->eos_token_id = (int)u32;
+		if(strcmp(key, "tokenizer.ggml.padding_token_id") == 0)
+			gi->pad_token_id = (int)u32;
 		setinfo_u64(gi, key, u32);
 		return 0;
 	case GGUFFloat32:
@@ -494,6 +500,10 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 			return -1;
 		if(strcmp(key, "tokenizer.ggml.tokens") == 0)
 			gi->vocab_size = u64;
+		if(strcmp(key, "tokenizer.ggml.eos_token_id") == 0 && u64 < 0x7fffffffULL)
+			gi->eos_token_id = (int)u64;
+		if(strcmp(key, "tokenizer.ggml.padding_token_id") == 0 && u64 < 0x7fffffffULL)
+			gi->pad_token_id = (int)u64;
 		setinfo_u64(gi, key, u64);
 		return 0;
 	case GGUFFloat64:
@@ -975,6 +985,8 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	GGUFLoadPlan gp;
 
 	memset(&gi, 0, sizeof gi);
+	gi.eos_token_id = -1;
+	gi.pad_token_id = -1;
 	memset(&gm, 0, sizeof gm);
 	memset(&gp, 0, sizeof gp);
 	memset(&cfg, 0, sizeof cfg);
@@ -1040,6 +1052,8 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		close(fd);
 		return -1;
 	}
+	m->eos_token_id = gi.eos_token_id;
+	m->pad_token_id = gi.pad_token_id;
 	m->loader_kind = LoaderGGUF;
 	m->token_str = gi.vocab_tokens;
 	gi.vocab_tokens = nil;

@@ -532,6 +532,7 @@ main(int argc, char **argv)
 	}
 
 	for(i = 0; i < steps && pos < model.cfg.seq_len; i++){
+		decode_logits_mask(&model, state.logits);
 		if(dump_logits){
 			/* Leading \\n so stderr lines do not glue to stdout tokens on one tty line. */
 			fprint(2, "\nlogits top-8 step %d:", i);
