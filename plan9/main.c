@@ -626,25 +626,32 @@ main(int argc, char **argv)
 	}
 
 	for(i = 0; i < steps && pos < model.cfg.seq_len; i++){
-		decode_logits_mask(&model, state.logits);
 		if(dump_logits){
 			/* Leading \\n so stderr lines do not glue to stdout tokens on one tty line. */
-			fprint(2, "\nlogits top-8 step %d:", i);
+			fprint(2, "\nlogits top-8 step %d (pre-mask):", i);
 			dump_logits_topk(2, state.logits, model.cfg.vocab_size, 8);
 		}
 		/*
-		 * When debugging vs Hugging Face: for Qwen2.5-0.5B-Instruct, single-token prompt
-		 * id 14990 ("hello") greedy next is id 19482 (Ġsyntax). If we differ, logits here
-		 * should show logit[19482] < logit[greedy] (inference mismatch).
+		 * HF ref (Qwen2.5-0.5B-Instruct, prompt id 14990): greedy next id 19482 (Ġsyntax).
+		 * Print pre-mask logits and unmasked argmax; then apply EOG mask like llama.cpp.
 		 */
+		if(emit_ids && i == 0 && model.cfg.vocab_size > 131306){
+			int um;
+
+			um = greedy_sample(state.logits, model.cfg.vocab_size);
+			fprint(2, "step0 pre-mask: logit[19482]=%g logit[131306]=%g unmasked_argmax=%d (logit=%g)\n",
+				state.logits[19482], state.logits[131306], um, state.logits[um]);
+		}
+		decode_logits_mask(&model, state.logits);
 		if(emit_ids && i == 0 && model.cfg.vocab_size > 19482)
-			fprint(2, "step0 logit[19482]=%g (HF greedy ref for hello→next)\n", state.logits[19482]);
+			fprint(2, "step0 post-mask: logit[19482]=%g (HF ref id; unchanged if not EOG-masked)\n",
+				state.logits[19482]);
 		if(temperature > 0.0f)
 			next = sample_with_temperature(state.logits, model.cfg.vocab_size, temperature);
 		else
 			next = greedy_sample(state.logits, model.cfg.vocab_size);
 		if(emit_ids && i == 0)
-			fprint(2, "step0 logit[%d]=%g (greedy argmax)\n", next, state.logits[next]);
+			fprint(2, "step0 post-mask: greedy id=%d logit=%g\n", next, state.logits[next]);
 		if(emit_ids){
 			fprint(2, "gen[%d] id=%d", i, next);
 			if(model.token_str != nil && next >= 0 && next < model.cfg.vocab_size
