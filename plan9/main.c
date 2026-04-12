@@ -632,10 +632,19 @@ main(int argc, char **argv)
 			fprint(2, "\nlogits top-8 step %d:", i);
 			dump_logits_topk(2, state.logits, model.cfg.vocab_size, 8);
 		}
+		/*
+		 * When debugging vs Hugging Face: for Qwen2.5-0.5B-Instruct, single-token prompt
+		 * id 14990 ("hello") greedy next is id 19482 (Ġsyntax). If we differ, logits here
+		 * should show logit[19482] < logit[greedy] (inference mismatch).
+		 */
+		if(emit_ids && i == 0 && model.cfg.vocab_size > 19482)
+			fprint(2, "step0 logit[19482]=%g (HF greedy ref for hello→next)\n", state.logits[19482]);
 		if(temperature > 0.0f)
 			next = sample_with_temperature(state.logits, model.cfg.vocab_size, temperature);
 		else
 			next = greedy_sample(state.logits, model.cfg.vocab_size);
+		if(emit_ids && i == 0)
+			fprint(2, "step0 logit[%d]=%g (greedy argmax)\n", next, state.logits[next]);
 		if(emit_ids){
 			fprint(2, "gen[%d] id=%d", i, next);
 			if(model.token_str != nil && next >= 0 && next < model.cfg.vocab_size
