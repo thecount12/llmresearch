@@ -4,7 +4,7 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-a]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a]\n", argv0);
 	fprint(2, "       -c  max context length (KV cache / attention); default caps large GGUF seq_len to 4096; -c 0 = use model max\n");
 	fprint(2, "       -p  each byte is a token id (toy / byte-vocab only); for GGUF BPE models use encode_prompt_hf.py → -P\n");
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
@@ -12,6 +12,7 @@ usage(void)
 	fprint(2, "       -s  seed RNG for temperature sampling (Plan 9 nrand/srand)\n");
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
+	fprint(2, "       -e  print each greedy token id (and piece string) to stderr for comparison with HF/llama.cpp\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "            token pieces are buffered so UTF-8 bytes split across tokens decode correctly\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
@@ -418,7 +419,7 @@ main(int argc, char **argv)
 	char err[512];
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
-	int steps, pos, i, token, next, promptlen, n_prompt_ids, nstr, verbose, dump_logits, pretty, bin_prompt, have_seed;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, nstr, verbose, dump_logits, emit_ids, pretty, bin_prompt, have_seed;
 	int cap_ctx;	/* -1 = default policy; 0 = full model seq_len; >0 = cap */
 	int orig_seq;
 	ulong seed;
@@ -435,6 +436,7 @@ main(int argc, char **argv)
 	temperature = 0.0f;
 	verbose = 0;
 	dump_logits = 0;
+	emit_ids = 0;
 	pretty = 0;
 	bin_prompt = 0;
 	have_seed = 0;
@@ -472,6 +474,9 @@ main(int argc, char **argv)
 		break;
 	case 'g':
 		dump_logits = 1;
+		break;
+	case 'e':
+		emit_ids = 1;
 		break;
 	case 'a':
 		pretty = 1;
@@ -575,7 +580,7 @@ main(int argc, char **argv)
 	if(prompt_file != nil && model.loader_kind == LoaderGGUF)
 		fprint(2, "lumen: note: ids in -P must come from the same tokenizer as this GGUF (e.g. encode_prompt_hf.py -m Qwen/Qwen2.5-0.5B-Instruct for Qwen2.5 GGUF)\n");
 	if(model.loader_kind == LoaderGGUF && model.token_str != nil)
-		fprint(2, "lumen: note: stdout is UTF-8 token text; a non-UTF-8 terminal shows mojibake (ASCII ok, CJK garbled); use UTF-8 drawterm/terminal or redirect to a file\n");
+		fprint(2, "lumen: note: stdout is UTF-8 pieces from GGUF; if decoded text looks wrong on any UTF-8 viewer, compare token ids with a reference (e.g. llama.cpp) using -e\n");
 
 	if(prompt_file != nil && n_prompt_ids + steps > model.cfg.seq_len)
 		sysfatal("prompt (%d tok) + steps (%d) exceeds seq_len=%d; raise -c or shorten -n",
@@ -631,6 +636,13 @@ main(int argc, char **argv)
 			next = sample_with_temperature(state.logits, model.cfg.vocab_size, temperature);
 		else
 			next = greedy_sample(state.logits, model.cfg.vocab_size);
+		if(emit_ids){
+			fprint(2, "gen[%d] id=%d", i, next);
+			if(model.token_str != nil && next >= 0 && next < model.cfg.vocab_size
+			    && model.token_str[next] != nil)
+				fprint(2, " piece=%s", model.token_str[next]);
+			fprint(2, "\n");
+		}
 		emit_token(&model, next, pretty);
 		token = next;
 		if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
