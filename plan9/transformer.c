@@ -1,6 +1,26 @@
 #include "common.h"
 #include "model.h"
 
+static char *
+arch_str(Config *cfg)
+{
+	if(cfg->arch == ArchQwen2)
+		return "qwen2";
+	if(cfg->arch == ArchLlama)
+		return "llama";
+	return "?";
+}
+
+static void
+forward_debug_emit(ForwardDebug *dbg, Config *cfg, int pos, const char *kind, float *v, int n)
+{
+	if(dbg == nil || !dbg->enabled)
+		return;
+	if(dbg->pos_filter >= 0 && pos != dbg->pos_filter)
+		return;
+	vec_fingerprint(dbg->fd, arch_str(cfg), pos, kind, v, n);
+}
+
 static int
 kv_dim(Config *cfg)
 {
@@ -14,7 +34,7 @@ copy_embedding_simple(float *dst, float *table, int token, Config *cfg)
 }
 
 int
-transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int nerr)
+transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int nerr, ForwardDebug *dbg)
 {
 	Config *cfg;
 	LayerWeights *lw;
@@ -22,6 +42,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	float score, inv_scale;
 	int l, i, t, h, dim, head_dim, n_heads, n_kv_heads, kv_repeat, kdim, kvh;
 	int t_start, natt, ti;
+	char kbuf[24];
 
 	USED(err);
 	USED(nerr);
@@ -43,6 +64,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		embed_lookup_gguf(s->x, m->token_embedding_table, token, cfg);
 	else
 		copy_embedding_simple(s->x, m->token_embedding_table, token, cfg);
+	forward_debug_emit(dbg, cfg, pos, "embed", s->x, dim);
 
 	for(l = 0; l < cfg->n_layers; l++){
 		lw = &m->layers[l];
@@ -126,9 +148,12 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		else
 			matvec(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
 		accum(s->x, s->xb, dim);
+		snprint(kbuf, sizeof kbuf, "L%d", l);
+		forward_debug_emit(dbg, cfg, pos, kbuf, s->x, dim);
 	}
 
 	rmsnorm(s->xb, s->x, m->rms_final_weight, dim, cfg->rms_eps);
+	forward_debug_emit(dbg, cfg, pos, "pre_logits", s->xb, dim);
 	if(m->loader_kind == LoaderGGUF)
 		matvec_logits_gguf(s->logits, m->wcls, s->xb, dim, cfg->vocab_size);
 	else

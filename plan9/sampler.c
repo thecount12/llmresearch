@@ -113,6 +113,35 @@ dump_logits_topk(int fd, float *logits, int n, int k)
 }
 
 /*
+ * Generic float vector fingerprint (same sumsq/cksum as hf_logits_fingerprint).
+ * arch: short label (e.g. qwen2, llama); kind: embed, L0, pre_logits, ...
+ */
+void
+vec_fingerprint(int fd, const char *arch, int pos, const char *kind, float *v, int n)
+{
+	double sumsq;
+	unsigned long long cksum;
+	union { float f; unsigned u; } uu;
+	int i;
+
+	if(v == nil || n <= 0 || arch == nil || kind == nil)
+		return;
+	sumsq = 0.0;
+	cksum = 1469598103934665603ULL;
+	for(i = 0; i < n; i++){
+		double x;
+
+		x = (double)v[i];
+		sumsq += x * x;
+		uu.f = v[i];
+		cksum ^= (unsigned long long)uu.u ^ ((unsigned long long)i << 1);
+		cksum *= 1099511628211ULL;
+	}
+	fprint(fd, "lumen_dbg: arch=%s pos=%d kind=%s dim=%d sumsq=%.18g cksum=%llux\n",
+		arch, pos, kind, n, sumsq, cksum);
+}
+
+/*
  * One stderr block for comparing pre-mask next-token logits to HF (hf_logits_ref.py).
  * sumsq = sum(logits[i]^2); cksum = 64-bit mix of float bits and index (not cryptographic).
  */

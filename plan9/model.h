@@ -6,6 +6,7 @@ typedef struct LayerWeights LayerWeights;
 typedef struct Model Model;
 typedef struct KVCache KVCache;
 typedef struct RunState RunState;
+typedef struct ForwardDebug ForwardDebug;
 
 enum {
 	LoaderUnknown,
@@ -85,6 +86,16 @@ struct RunState {
 	KVCache cache;
 };
 
+/*
+ * Optional forward trace (stderr): one line per checkpoint (embed, L0.., pre_logits).
+ * pos_filter: -1 = dump at every token position; else only when pos == pos_filter.
+ */
+struct ForwardDebug {
+	int enabled;
+	int fd;
+	int pos_filter;
+};
+
 int validate_config(Config *cfg, char *err, int nerr);
 
 int alloc_model(Model *m, Config *cfg, char *err, int nerr);
@@ -115,12 +126,14 @@ void matvec_ffn_down_gguf(float *out, float *w, float *x, int dim, int hidden);
 float silu(float x);
 void rope_apply(float *q, float *k, int pos, Config *cfg);
 
-int transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int nerr);
 int greedy_sample(float *logits, int n);
 int sample_with_temperature(float *logits, int n, float temperature);
 void sampler_seed(ulong seed);
 void dump_logits_topk(int fd, float *logits, int n, int k);
 void hf_logits_fingerprint(int fd, float *logits, int n);
+void vec_fingerprint(int fd, const char *arch, int pos, const char *kind, float *v, int n);
 void decode_logits_mask(Model *m, float *logits);
+
+int transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int nerr, ForwardDebug *dbg);
 
 #endif

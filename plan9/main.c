@@ -1,10 +1,16 @@
 #include "common.h"
 #include "model.h"
 
+static int
+arg_is_all(char *s)
+{
+	return s != nil && s[0] == 'a' && s[1] == 'l' && s[2] == 'l' && s[3] == '\0';
+}
+
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a] [-F]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a] [-F] [-D pos|all]\n", argv0);
 	fprint(2, "       -c  max context length (KV cache / attention); default caps large GGUF seq_len to 4096; -c 0 = use model max\n");
 	fprint(2, "       -p  each byte is a token id (toy / byte-vocab only); for GGUF BPE models use encode_prompt_hf.py → -P\n");
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
@@ -14,6 +20,8 @@ usage(void)
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
 	fprint(2, "       -e  print each greedy token id (and piece string) to stderr for comparison with HF/llama.cpp\n");
 	fprint(2, "       -F  after prompt: print pre-mask logits fingerprint (greedy, sumsq, cksum, top-5) on stderr; use hf_logits_ref.py on host\n");
+	fprint(2, "       -D  forward trace: stderr lines lumen_dbg: arch=… pos=… kind=… (embed|L#|pre_logits) sumsq/cksum; arg is token position or \"all\"\n");
+	fprint(2, "            compare to hf_hidden_ref.py on host; use e.g. -D 1 for last prompt tok of a 2-token -P file\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "            token pieces are buffered so UTF-8 bytes split across tokens decode correctly\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
@@ -420,7 +428,9 @@ main(int argc, char **argv)
 	char err[512];
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
-	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, hf_fingerprint, pretty, bin_prompt, have_seed;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, hf_fingerprint, debug_fwd, debug_fwd_pos, pretty, bin_prompt, have_seed;
+	ForwardDebug fwd_dbg;
+	char *darg;
 	int cap_ctx;	/* -1 = default policy; 0 = full model seq_len; >0 = cap */
 	int orig_seq;
 	ulong seed;
@@ -439,6 +449,9 @@ main(int argc, char **argv)
 	dump_logits = 0;
 	emit_ids = 0;
 	hf_fingerprint = 0;
+	debug_fwd = 0;
+	debug_fwd_pos = 0;
+	darg = nil;
 	pretty = 0;
 	bin_prompt = 0;
 	have_seed = 0;
@@ -483,6 +496,10 @@ main(int argc, char **argv)
 	case 'F':
 		hf_fingerprint = 1;
 		break;
+	case 'D':
+		debug_fwd = 1;
+		darg = EARGF(usage());
+		break;
 	case 'a':
 		pretty = 1;
 		break;
@@ -492,6 +509,16 @@ main(int argc, char **argv)
 
 	if(bin_prompt && prompt_file == nil)
 		sysfatal("-B requires -P");
+	if(debug_fwd){
+		if(arg_is_all(darg))
+			debug_fwd_pos = -1;
+		else
+			debug_fwd_pos = atoi(darg);
+		memset(&fwd_dbg, 0, sizeof fwd_dbg);
+		fwd_dbg.enabled = 1;
+		fwd_dbg.fd = 2;
+		fwd_dbg.pos_filter = debug_fwd_pos;
+	}
 
 	if(model_path != nil){
 		if(load_model_auto(&model, model_path, err, sizeof err) < 0)
@@ -606,12 +633,12 @@ main(int argc, char **argv)
 		if(n_prompt_ids > 0){
 			for(i = 0; i < n_prompt_ids && pos < model.cfg.seq_len; i++){
 				token = prompt_ids[i];
-				if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+				if(transformer_forward(&model, &state, token, pos, err, sizeof err, debug_fwd ? &fwd_dbg : nil) < 0)
 					sysfatal("forward failed at prompt token %d", pos);
 				pos++;
 			}
 		}else{
-			if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+			if(transformer_forward(&model, &state, token, pos, err, sizeof err, debug_fwd ? &fwd_dbg : nil) < 0)
 				sysfatal("forward failed");
 			pos++;
 		}
@@ -619,12 +646,12 @@ main(int argc, char **argv)
 		promptlen = strlen(prompt);
 		for(i = 0; i < promptlen && pos < model.cfg.seq_len; i++){
 			token = clamp_token((uchar)prompt[i], model.cfg.vocab_size);
-			if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+			if(transformer_forward(&model, &state, token, pos, err, sizeof err, debug_fwd ? &fwd_dbg : nil) < 0)
 				sysfatal("forward failed at prompt token %d", pos);
 			pos++;
 		}
 		if(promptlen == 0){
-			if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+			if(transformer_forward(&model, &state, token, pos, err, sizeof err, debug_fwd ? &fwd_dbg : nil) < 0)
 				sysfatal("forward failed");
 			pos++;
 		}
@@ -678,7 +705,7 @@ main(int argc, char **argv)
 		}
 		emit_token(&model, next, pretty);
 		token = next;
-		if(transformer_forward(&model, &state, token, pos, err, sizeof err) < 0)
+		if(transformer_forward(&model, &state, token, pos, err, sizeof err, debug_fwd ? &fwd_dbg : nil) < 0)
 			sysfatal("forward failed at generation step %d", i);
 		pos++;
 	}
