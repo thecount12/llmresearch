@@ -419,7 +419,7 @@ main(int argc, char **argv)
 	char err[512];
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
-	int steps, pos, i, token, next, promptlen, n_prompt_ids, nstr, verbose, dump_logits, emit_ids, pretty, bin_prompt, have_seed;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, pretty, bin_prompt, have_seed;
 	int cap_ctx;	/* -1 = default policy; 0 = full model seq_len; >0 = cap */
 	int orig_seq;
 	ulong seed;
@@ -625,6 +625,7 @@ main(int argc, char **argv)
 		}
 	}
 
+	prompt_tok_count = pos; /* tokens fed before first gen step (-P or -p) */
 	for(i = 0; i < steps && pos < model.cfg.seq_len; i++){
 		if(dump_logits){
 			/* Leading \\n so stderr lines do not glue to stdout tokens on one tty line. */
@@ -632,7 +633,8 @@ main(int argc, char **argv)
 			dump_logits_topk(2, state.logits, model.cfg.vocab_size, 8);
 		}
 		/*
-		 * HF ref (Qwen2.5-0.5B-Instruct, prompt id 14990): greedy next id 19482 (Ġsyntax).
+		 * HF cross-check: greedy next id 19482 (Ġsyntax) only for single-token prompt [14990].
+		 * With multiple -P ids, compare logits to HF for that exact prefix instead.
 		 * Print pre-mask logits and unmasked argmax; then apply EOG mask like llama.cpp.
 		 */
 		if(emit_ids && i == 0 && model.cfg.vocab_size > 131306){
@@ -643,9 +645,14 @@ main(int argc, char **argv)
 				state.logits[19482], state.logits[131306], um, state.logits[um]);
 		}
 		decode_logits_mask(&model, state.logits);
-		if(emit_ids && i == 0 && model.cfg.vocab_size > 19482)
-			fprint(2, "step0 post-mask: logit[19482]=%g (HF ref id; unchanged if not EOG-masked)\n",
-				state.logits[19482]);
+		if(emit_ids && i == 0 && model.cfg.vocab_size > 19482){
+			if(prompt_tok_count == 1)
+				fprint(2, "step0 post-mask: logit[19482]=%g (HF greedy-next ref for prompt [14990] only; unchanged if not EOG-masked)\n",
+					state.logits[19482]);
+			else
+				fprint(2, "step0 post-mask: logit[19482]=%g (not the HF [14990]→19482 ref; compare HF on this full prompt prefix)\n",
+					state.logits[19482]);
+		}
 		if(temperature > 0.0f)
 			next = sample_with_temperature(state.logits, model.cfg.vocab_size, temperature);
 		else
