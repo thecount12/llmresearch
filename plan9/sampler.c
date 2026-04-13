@@ -111,3 +111,56 @@ dump_logits_topk(int fd, float *logits, int n, int k)
 	}
 	fprint(fd, "\n");
 }
+
+/*
+ * One stderr block for comparing pre-mask next-token logits to HF (hf_logits_ref.py).
+ * sumsq = sum(logits[i]^2); cksum = 64-bit mix of float bits and index (not cryptographic).
+ */
+void
+hf_logits_fingerprint(int fd, float *logits, int n)
+{
+	int i, g, round, j, u;
+	int picked[8];
+	int besti;
+	int nk;
+	double sumsq;
+	unsigned long long cksum;
+	union { float f; unsigned u; } uu;
+
+	if(logits == nil || n <= 0)
+		return;
+	g = greedy_sample(logits, n);
+	sumsq = 0.0;
+	cksum = 1469598103934665603ULL;
+	for(i = 0; i < n; i++){
+		double x;
+
+		x = (double)logits[i];
+		sumsq += x * x;
+		uu.f = logits[i];
+		cksum ^= (unsigned long long)uu.u ^ ((unsigned long long)i << 1);
+		cksum *= 1099511628211ULL;
+	}
+	fprint(fd, "lumen_hf: pre_mask greedy_id=%d greedy_logit=%g sumsq=%.18g cksum=%llux\n",
+		g, logits[g], sumsq, cksum);
+	fprint(fd, "lumen_hf: pre_mask top5");
+	nk = 5;
+	if(nk > n)
+		nk = n;
+	for(round = 0; round < nk; round++){
+		besti = -1;
+		for(j = 0; j < n; j++){
+			for(u = 0; u < round; u++)
+				if(picked[u] == j)
+					goto skipfp;
+			if(besti < 0 || logits[j] > logits[besti])
+				besti = j;
+		skipfp:;
+		}
+		if(besti < 0)
+			break;
+		picked[round] = besti;
+		fprint(fd, " %d:%g", besti, logits[besti]);
+	}
+	fprint(fd, "\n");
+}

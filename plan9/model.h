@@ -120,6 +120,7 @@ int greedy_sample(float *logits, int n);
 int sample_with_temperature(float *logits, int n, float temperature);
 void sampler_seed(ulong seed);
 void dump_logits_topk(int fd, float *logits, int n, int k);
+void hf_logits_fingerprint(int fd, float *logits, int n);
 void decode_logits_mask(Model *m, float *logits);
 
 #endif

@@ -4,7 +4,7 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a] [-F]\n", argv0);
 	fprint(2, "       -c  max context length (KV cache / attention); default caps large GGUF seq_len to 4096; -c 0 = use model max\n");
 	fprint(2, "       -p  each byte is a token id (toy / byte-vocab only); for GGUF BPE models use encode_prompt_hf.py → -P\n");
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
@@ -13,6 +13,7 @@ usage(void)
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
 	fprint(2, "       -e  print each greedy token id (and piece string) to stderr for comparison with HF/llama.cpp\n");
+	fprint(2, "       -F  after prompt: print pre-mask logits fingerprint (greedy, sumsq, cksum, top-5) on stderr; use hf_logits_ref.py on host\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "            token pieces are buffered so UTF-8 bytes split across tokens decode correctly\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
@@ -419,7 +420,7 @@ main(int argc, char **argv)
 	char err[512];
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
-	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, pretty, bin_prompt, have_seed;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, hf_fingerprint, pretty, bin_prompt, have_seed;
 	int cap_ctx;	/* -1 = default policy; 0 = full model seq_len; >0 = cap */
 	int orig_seq;
 	ulong seed;
@@ -437,6 +438,7 @@ main(int argc, char **argv)
 	verbose = 0;
 	dump_logits = 0;
 	emit_ids = 0;
+	hf_fingerprint = 0;
 	pretty = 0;
 	bin_prompt = 0;
 	have_seed = 0;
@@ -477,6 +479,9 @@ main(int argc, char **argv)
 		break;
 	case 'e':
 		emit_ids = 1;
+		break;
+	case 'F':
+		hf_fingerprint = 1;
 		break;
 	case 'a':
 		pretty = 1;
@@ -626,6 +631,11 @@ main(int argc, char **argv)
 	}
 
 	prompt_tok_count = pos; /* tokens fed before first gen step (-P or -p) */
+	if(hf_fingerprint){
+		fprint(2, "lumen_hf: after_prompt prompt_tok=%d next-token logits (pre_mask, before EOG mask)\n",
+			prompt_tok_count);
+		hf_logits_fingerprint(2, state.logits, model.cfg.vocab_size);
+	}
 	for(i = 0; i < steps && pos < model.cfg.seq_len; i++){
 		if(dump_logits){
 			/* Leading \\n so stderr lines do not glue to stdout tokens on one tty line. */
