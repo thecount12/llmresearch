@@ -218,11 +218,17 @@ rope_apply(float *q, float *k, int pos, Config *cfg)
 				q[h * head_dim + i0] = q0 * c - q1 * s;
 				q[h * head_dim + i1] = q0 * s + q1 * c;
 
-				kv_head = h / kv_repeat;
-				k0 = k[kv_head * kv_head_dim + i0];
-				k1 = k[kv_head * kv_head_dim + i1];
-				k[kv_head * kv_head_dim + i0] = k0 * c - k1 * s;
-				k[kv_head * kv_head_dim + i1] = k0 * s + k1 * c;
+				/*
+				 * GQA: k is shared — only n_kv_heads blocks. Rotate each kv head once,
+				 * not once per query head (would apply RoPE kv_repeat times per block).
+				 */
+				if(h % kv_repeat == 0){
+					kv_head = h / kv_repeat;
+					k0 = k[kv_head * kv_head_dim + i0];
+					k1 = k[kv_head * kv_head_dim + i1];
+					k[kv_head * kv_head_dim + i0] = k0 * c - k1 * s;
+					k[kv_head * kv_head_dim + i1] = k0 * s + k1 * c;
+				}
 			}else{
 				/* LLaMA-style: consecutive pairs (2*ic, 2*ic+1) */
 				i0 = 2 * ic;
@@ -232,11 +238,13 @@ rope_apply(float *q, float *k, int pos, Config *cfg)
 				q[h * head_dim + i0] = q0 * c - q1 * s;
 				q[h * head_dim + i1] = q0 * s + q1 * c;
 
-				kv_head = h / kv_repeat;
-				k0 = k[kv_head * kv_head_dim + i0];
-				k1 = k[kv_head * kv_head_dim + i1];
-				k[kv_head * kv_head_dim + i0] = k0 * c - k1 * s;
-				k[kv_head * kv_head_dim + i1] = k0 * s + k1 * c;
+				if(h % kv_repeat == 0){
+					kv_head = h / kv_repeat;
+					k0 = k[kv_head * kv_head_dim + i0];
+					k1 = k[kv_head * kv_head_dim + i1];
+					k[kv_head * kv_head_dim + i0] = k0 * c - k1 * s;
+					k[kv_head * kv_head_dim + i1] = k0 * s + k1 * c;
+				}
 			}
 		}
 	}
