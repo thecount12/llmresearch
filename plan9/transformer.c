@@ -49,16 +49,15 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 
 		rmsnorm(s->xb, s->x, lw->rms_att_weight, dim, cfg->rms_eps);
 		/*
-		 * GGUF stores attn weights like ggml mul_mat: [in, out] along ne[0]×ne[1],
-		 * i.e. transpose of PyTorch Linear [out, in]. Same layout as attn_k/v (see matvec_k_proj_gguf).
-		 * Plain matvec() assumes PyTorch row-major [out][in] and is wrong for square q/wo.
+		 * GGUF maps attn_k/v as [dim, kdim] (transpose of PyTorch [kdim, dim]); use matvec_k_proj_gguf.
+		 * attn_q and attn_out are [dim, dim] with the same axis order as PyTorch [out, in] row-major;
+		 * use matvec like the HF linear (do not use matvec_k_proj_gguf — that would apply W^T).
 		 */
+		matvec(s->q, lw->wq, s->xb, dim, dim);
 		if(m->loader_kind == LoaderGGUF){
-			matvec_k_proj_gguf(s->q, lw->wq, s->xb, dim, dim);
 			matvec_k_proj_gguf(s->k, lw->wk, s->xb, kdim, dim);
 			matvec_k_proj_gguf(s->v, lw->wv, s->xb, kdim, dim);
 		}else{
-			matvec(s->q, lw->wq, s->xb, dim, dim);
 			matvec(s->k, lw->wk, s->xb, kdim, dim);
 			matvec(s->v, lw->wv, s->xb, kdim, dim);
 		}
@@ -109,10 +108,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 			}
 		}
 
-		if(m->loader_kind == LoaderGGUF)
-			matvec_k_proj_gguf(s->xb, lw->wo, s->xb2, dim, dim);
-		else
-			matvec(s->xb, lw->wo, s->xb2, dim, dim);
+		matvec(s->xb, lw->wo, s->xb2, dim, dim);
 		accum(s->x, s->xb, dim);
 
 		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim, cfg->rms_eps);

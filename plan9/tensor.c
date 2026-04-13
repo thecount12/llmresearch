@@ -130,10 +130,9 @@ matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab)
 }
 
 /*
- * GGUF attention linear weights match ggml mul_mat layout: [in, out] as row-major
- * [nin][nout] (transpose of PyTorch Linear [out, in]). Used for attn_k, attn_v,
- * attn_q, and attn_output (square [dim,dim] uses the same indexing).
- * out[i] = sum_r w[r*nout+i]*x[r].
+ * GGUF attn_k / attn_v are [dim, kdim] row-major = transpose of PyTorch [kdim, dim].
+ * attn_q / attn_out are [dim, dim] same order as PyTorch; use matvec(), not this.
+ * out[i] = sum_r w[r*kdim+i]*x[r].
  */
 void
 matvec_k_proj_gguf(float *out, float *w, float *x, int kdim, int dim)
