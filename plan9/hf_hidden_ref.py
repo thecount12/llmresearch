@@ -10,7 +10,7 @@ Compare on Plan 9 (merge stderr for grep):
 
 Use -D with the same token index as the last id in -P (e.g. 1 for two ids).
 
-Requires: torch, transformers (same as hf_logits_ref.py).
+Use --dtype float16 to compare against F16 GGUF more closely (see hf_logits_ref.py --dtype).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from hf_logits_ref import parse_tok_file, resolve_hf_model_id
+from hf_logits_ref import parse_tok_file, parse_torch_dtype, resolve_hf_model_id
 
 
 def vec_fp_line(arch: str, pos: int, kind: str, vec) -> str:
@@ -71,6 +71,11 @@ def main() -> None:
         default=None,
         help="token position for lumen_dbg lines (default: last prompt index, len(ids)-1)",
     )
+    ap.add_argument(
+        "--dtype",
+        default="float32",
+        help="model weights/activations: float32 (default), float16, bfloat16",
+    )
     args = ap.parse_args()
 
     if str(args.model).lower().endswith(".gguf"):
@@ -83,6 +88,12 @@ def main() -> None:
     except ImportError as e:
         print("need torch and transformers:", e, file=sys.stderr)
         sys.exit(1)
+
+    try:
+        dt = parse_torch_dtype(args.dtype)
+    except ValueError as e:
+        print("hf_hidden_ref:", e, file=sys.stderr)
+        sys.exit(2)
 
     ids = parse_tok_file(args.prompt_file)
     if not ids:
@@ -97,10 +108,11 @@ def main() -> None:
     model_id = resolve_hf_model_id(str(args.model))
     if model_id != str(args.model):
         print(f"hf_hidden_ref: using Hub id {model_id!r}", file=sys.stderr)
+    print(f"hf_hidden_ref: torch_dtype={dt}", file=sys.stderr)
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.float32,
+        torch_dtype=dt,
         low_cpu_mem_usage=True,
     )
     model.eval()
@@ -123,7 +135,7 @@ def main() -> None:
     n_layers = len(getattr(base, "layers", []))
 
     print(
-        f"lumen_dbg: HF reference hidden states at pos={line_pos} (last prompt tok); "
+        f"lumen_dbg: HF reference dtype={dt} pos={line_pos} (prompt tok index); "
         f"match lumen -D {line_pos}"
     )
 

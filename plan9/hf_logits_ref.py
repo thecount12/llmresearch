@@ -10,7 +10,7 @@ Compare stderr from:
   6.out -m model.gguf -P hello2.tok -n 0 -F 2>lumen.hf
 
 Requires: pip install torch transformers
-Uses float32 weights for a stable reference; GGUF f16 inference may differ slightly.
+Use --dtype float16 to align better with F16 GGUF (default float32).
 """
 
 from __future__ import annotations
@@ -46,6 +46,27 @@ def parse_tok_file(path: Path) -> list[int]:
         for part in line.replace(",", " ").split():
             ids.append(int(part))
     return ids
+
+
+def parse_torch_dtype(name: str):
+    """CLI string → torch.dtype (float32, float16, bfloat16 aliases)."""
+    import torch
+
+    n = (name or "float32").lower().strip()
+    table = {
+        "float32": torch.float32,
+        "fp32": torch.float32,
+        "f32": torch.float32,
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "f16": torch.float16,
+        "half": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+    }
+    if n not in table:
+        raise ValueError(f"unknown dtype {name!r} (float32, float16, bfloat16)")
+    return table[n]
 
 
 def fingerprint_lines(logits) -> list[str]:
@@ -105,6 +126,11 @@ def main() -> None:
         help="ASCII token ids file (same as lumen -P)",
     )
     ap.add_argument("--device", default="cpu", help="torch device (default cpu)")
+    ap.add_argument(
+        "--dtype",
+        default="float32",
+        help="model weights/activations: float32 (default), float16, bfloat16 — closer to F16 GGUF",
+    )
     args = ap.parse_args()
 
     if str(args.model).lower().endswith(".gguf"):
@@ -125,6 +151,12 @@ def main() -> None:
         print("need torch and transformers:", e, file=sys.stderr)
         sys.exit(1)
 
+    try:
+        dt = parse_torch_dtype(args.dtype)
+    except ValueError as e:
+        print("hf_logits_ref:", e, file=sys.stderr)
+        sys.exit(2)
+
     ids = parse_tok_file(args.prompt_file)
     if not ids:
         print("no token ids in", args.prompt_file, file=sys.stderr)
@@ -139,7 +171,7 @@ def main() -> None:
 
     m = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.float32,
+        torch_dtype=dt,
         low_cpu_mem_usage=True,
     )
     m.eval()
@@ -149,7 +181,10 @@ def main() -> None:
     with torch.no_grad():
         out = m(input_ids)
     logits = out.logits[0, -1].detach().float().cpu().numpy()
-    print(f"lumen_hf: after_prompt prompt_tok={len(ids)} next-token logits (pre_mask, before EOG mask)")
+    print(
+        f"lumen_hf: after_prompt prompt_tok={len(ids)} dtype={dt} "
+        f"next-token logits (pre_mask, before EOG mask)"
+    )
     for line in fingerprint_lines(logits):
         print(line)
 
