@@ -29,7 +29,12 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from hf_logits_ref import parse_tok_file, parse_torch_dtype, resolve_hf_model_id
+from hf_logits_ref import (
+    load_causal_lm,
+    parse_tok_file,
+    parse_torch_dtype,
+    resolve_hf_model_id,
+)
 
 
 def vec_fp_line(arch: str, pos: int, kind: str, vec) -> str:
@@ -105,7 +110,6 @@ def main() -> None:
 
     try:
         import torch
-        from transformers import AutoModelForCausalLM
     except ImportError as e:
         print("need torch and transformers:", e, file=sys.stderr)
         sys.exit(1)
@@ -130,13 +134,9 @@ def main() -> None:
     model_id = resolve_hf_model_id(str(args.model))
     if model_id != str(args.model):
         print(f"hf_hidden_ref: using Hub id {model_id!r}", file=sys.stderr)
-    print(f"hf_hidden_ref: torch_dtype={dt}", file=sys.stderr)
+    print(f"hf_hidden_ref: dtype={dt}", file=sys.stderr)
 
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=dt,
-        low_cpu_mem_usage=True,
-    )
+    model = load_causal_lm(model_id, dt)
     model.eval()
     dev = torch.device(args.device)
     model.to(dev)

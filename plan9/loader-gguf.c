@@ -634,12 +634,17 @@ embed_shape_check(Model *m, uvlong ndims, uvlong *dims, int *lay)
 	Config *cfg;
 
 	cfg = &m->cfg;
+	/*
+	 * GGUF tensor ne[] matches ggml: ne[0] is innermost in memory.
+	 * ne = (dim, vocab)  -> linear index t*dim+d  -> embed_layout 1 ([vocab,dim] rows)
+	 * ne = (vocab, dim)  -> linear index d*vocab+t -> embed_layout 0 ([dim,vocab] cols)
+	 */
 	if(checkdims2(ndims, dims, cfg->dim, cfg->vocab_size)){
-		*lay = 0;
+		*lay = 1;
 		return 0;
 	}
 	if(checkdims2(ndims, dims, cfg->vocab_size, cfg->dim)){
-		*lay = 1;
+		*lay = 0;
 		return 0;
 	}
 	return -1;

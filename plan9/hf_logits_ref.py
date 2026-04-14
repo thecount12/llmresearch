@@ -69,6 +69,20 @@ def parse_torch_dtype(name: str):
     return table[n]
 
 
+def load_causal_lm(model_id: str, dtype):
+    """from_pretrained with dtype= (newer transformers); fall back to torch_dtype=."""
+    from transformers import AutoModelForCausalLM
+
+    try:
+        return AutoModelForCausalLM.from_pretrained(
+            model_id, dtype=dtype, low_cpu_mem_usage=True
+        )
+    except TypeError:
+        return AutoModelForCausalLM.from_pretrained(
+            model_id, torch_dtype=dtype, low_cpu_mem_usage=True
+        )
+
+
 def fingerprint_lines(logits) -> list[str]:
     """logits: 1-D float32/float64 tensor or numpy array, length vocab."""
     import numpy as np
@@ -146,7 +160,6 @@ def main() -> None:
 
     try:
         import torch
-        from transformers import AutoModelForCausalLM
     except ImportError as e:
         print("need torch and transformers:", e, file=sys.stderr)
         sys.exit(1)
@@ -169,11 +182,7 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    m = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=dt,
-        low_cpu_mem_usage=True,
-    )
+    m = load_causal_lm(model_id, dt)
     m.eval()
     dev = torch.device(args.device)
     m.to(dev)
