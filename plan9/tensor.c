@@ -99,8 +99,10 @@ matvec(float *out, float *w, float *x, int nout, int nin)
 }
 
 /*
- * GGUF stores token_embd.weight as [dim, vocab] row-major: table[d*vocab + t].
- * Simple/toy format uses [vocab, dim]: table[t*dim + d].
+ * GGUF token_embd.weight after dequant:
+ * embed_layout 0: [dim, vocab] row-major — table[d*vocab + t] (llama.cpp default)
+ * embed_layout 1: [vocab, dim] row-major — table[t*dim + d] (PyTorch embed_tokens rows)
+ * Simple/toy format uses [vocab, dim] like layout 1.
  */
 void
 embed_lookup_gguf(float *dst, float *table, int token, Config *cfg)
@@ -108,19 +110,35 @@ embed_lookup_gguf(float *dst, float *table, int token, Config *cfg)
 	int d, v;
 
 	v = cfg->vocab_size;
+	if(cfg->embed_layout == 1){
+		for(d = 0; d < cfg->dim; d++)
+			dst[d] = table[token * cfg->dim + d];
+		return;
+	}
 	for(d = 0; d < cfg->dim; d++)
 		dst[d] = table[d * v + token];
 }
 
 /*
- * GGUF output.weight is [dim, vocab]: logits[v] = sum_d w[d*vocab+v] * x[d].
+ * GGUF output.weight: same memory layout as token_embd (see Config.embed_layout).
+ * layout 0: [dim, vocab] — logits[v] = sum_d w[d*vocab+v]*x[d]
+ * layout 1: [vocab, dim] — logits[v] = sum_d w[v*dim+d]*x[d]
  */
 void
-matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab)
+matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab, int embed_layout)
 {
 	int v, d;
 	float sum;
 
+	if(embed_layout == 1){
+		for(v = 0; v < vocab; v++){
+			sum = 0.0f;
+			for(d = 0; d < dim; d++)
+				sum += w[v * dim + d] * x[d];
+			out[v] = sum;
+		}
+		return;
+	}
 	for(v = 0; v < vocab; v++){
 		sum = 0.0f;
 		for(d = 0; d < dim; d++)

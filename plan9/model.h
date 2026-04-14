@@ -37,6 +37,13 @@ struct Config {
 	int sliding_window;	/* 0 = full causal; else limit KV positions */
 	int arch;		/* ArchLlama, ArchQwen2, … */
 	int rope_type;		/* RopeNormal or RopeNeox (match GGUF / llama.cpp) */
+	/*
+	 * GGUF token_embd.weight / output.weight layout in memory after dequant:
+	 * 0 = [dim, vocab_size] row-major, index d*vocab+token (llama.cpp default)
+	 * 1 = [vocab_size, dim] row-major, index token*dim+d (PyTorch embed_tokens rows)
+	 * Set at load from tensor dims; must match token_embd and output.weight.
+	 */
+	int embed_layout;
 };
 
 struct LayerWeights {
@@ -119,7 +126,7 @@ void softmax(float *x, int n);
 void rmsnorm(float *out, float *x, float *weight, int n, float eps);
 void matvec(float *out, float *w, float *x, int nout, int nin);
 void embed_lookup_gguf(float *dst, float *table, int token, Config *cfg);
-void matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab);
+void matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab, int embed_layout);
 void matvec_k_proj_gguf(float *out, float *w, float *x, int kdim, int dim);
 void matvec_gate_up_gguf(float *out, float *w, float *x, int hidden, int dim);
 void matvec_ffn_down_gguf(float *out, float *w, float *x, int dim, int hidden);

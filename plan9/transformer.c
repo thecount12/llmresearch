@@ -155,7 +155,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	rmsnorm(s->xb, s->x, m->rms_final_weight, dim, cfg->rms_eps);
 	forward_debug_emit(dbg, cfg, pos, "pre_logits", s->xb, dim);
 	if(m->loader_kind == LoaderGGUF)
-		matvec_logits_gguf(s->logits, m->wcls, s->xb, dim, cfg->vocab_size);
+		matvec_logits_gguf(s->logits, m->wcls, s->xb, dim, cfg->vocab_size, cfg->embed_layout);
 	else
 		matvec(s->logits, m->wcls, s->xb, cfg->vocab_size, dim);
 	return 0;

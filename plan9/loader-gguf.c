@@ -629,11 +629,41 @@ marktype(GGUFMap *gm, char *name, ulong ggml_type)
 }
 
 static int
+embed_shape_check(Model *m, uvlong ndims, uvlong *dims, int *lay)
+{
+	Config *cfg;
+
+	cfg = &m->cfg;
+	if(checkdims2(ndims, dims, cfg->dim, cfg->vocab_size)){
+		*lay = 0;
+		return 0;
+	}
+	if(checkdims2(ndims, dims, cfg->vocab_size, cfg->dim)){
+		*lay = 1;
+		return 0;
+	}
+	return -1;
+}
+
+static int
+embed_layout_commit(Model *m, int lay)
+{
+	if(m->cfg.embed_layout < 0){
+		m->cfg.embed_layout = lay;
+		return 0;
+	}
+	if(m->cfg.embed_layout != lay)
+		return -1;
+	return 0;
+}
+
+static int
 maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, ulong ndims, uvlong *dims, uvlong off)
 {
 	int layer;
 	Config *cfg;
 	int kdim;
+	int lay;
 
 	cfg = &m->cfg;
 	kdim = (cfg->dim / cfg->n_heads) * cfg->n_kv_heads;
@@ -643,7 +673,9 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 		return 0;
 
 	if(strcmp(name, "token_embd.weight") == 0){
-		if(!checkdims2(ndims, dims, cfg->dim, cfg->vocab_size))
+		if(embed_shape_check(m, ndims, dims, &lay) < 0)
+			return -1;
+		if(embed_layout_commit(m, lay) < 0)
 			return -1;
 		marktype(gm, name, ggml_type);
 		gm->token_embd++;
@@ -657,7 +689,9 @@ maptensor(Model *m, GGUFMap *gm, GGUFLoadPlan *gp, char *name, ulong ggml_type, 
 		return addplan(gp, name, m->rms_final_weight, cfg->dim, off, ggml_type);
 	}
 	if(strcmp(name, "output.weight") == 0){
-		if(!checkdims2(ndims, dims, cfg->dim, cfg->vocab_size))
+		if(embed_shape_check(m, ndims, dims, &lay) < 0)
+			return -1;
+		if(embed_layout_commit(m, lay) < 0)
 			return -1;
 		marktype(gm, name, ggml_type);
 		gm->output++;
@@ -1058,6 +1092,7 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	m->token_str = gi.vocab_tokens;
 	gi.vocab_tokens = nil;
 	gi.vocab_tokens_n = 0;
+	m->cfg.embed_layout = -1;
 
 	gp.cap = 3 + cfg.n_layers * 12;
 	gp.items = mallocz(gp.cap * sizeof(GGUFTensorPlan), 1);
@@ -1136,10 +1171,13 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		gp.tied_output = 1;
 	}
 
+	if(m->cfg.embed_layout < 0)
+		m->cfg.embed_layout = 0;
+
 	free(gp.items);
 	snprint(err, nerr,
-		"gguf loaded: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d q4_0=%d q8_0=%d",
+		"gguf loaded: arch=%s version=%lud tensors=%llud kv=%llud dim=%llud layers=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d embed_layout=%d q4_0=%d q8_0=%d",
 		gi.architecture, gi.version, gi.tensor_count, gi.kv_count, gi.dim,
-		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gp.tied_output, gm.q4_0, gm.q8_0);
+		gi.n_layers, gi.n_heads, gi.n_kv_heads, gi.vocab_size, gi.seq_len, gp.tied_output, m->cfg.embed_layout, gm.q4_0, gm.q8_0);
 	return 0;
 }
