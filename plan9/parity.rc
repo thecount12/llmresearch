@@ -19,9 +19,10 @@ echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
 echo ' 6.out   '^$gguf^' -Z '^$row^' -n 0 >[2=1] | grep lumen_dump'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 echo
-echo '--- 2) hidden fingerprints: lumen -D vs hf_hidden_ref -p ---'
+echo '--- 2) hidden fingerprints (embed, L#_attn, L#, pre_logits): lumen -D vs hf_hidden_ref -p ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >[2=1] | grep lumen_dbg'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
+echo ' If L0_attn matches but L0 does not, bug is in MLP; if L0_attn mismatches, bug is in attention path.'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 1 -F >[2=1] | grep lumen_hf'

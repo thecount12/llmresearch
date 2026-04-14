@@ -132,6 +132,8 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 
 		matvec(s->xb, lw->wo, s->xb2, dim, dim);
 		accum(s->x, s->xb, dim);
+		snprint(kbuf, sizeof kbuf, "L%d_attn", l);
+		forward_debug_emit(dbg, cfg, pos, kbuf, s->x, dim);
 
 		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim, cfg->rms_eps);
 		if(m->loader_kind == LoaderGGUF){

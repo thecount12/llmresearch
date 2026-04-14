@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Print lumen_dbg lines matching lumen -D (embed, L0..L{n-1}, pre_logits) for the last prompt position.
+Print lumen_dbg lines matching lumen -D (embed, L#_attn, L#, pre_logits) for the last prompt position.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -161,17 +161,33 @@ def main() -> None:
 
     input_ids = torch.tensor([ids], dtype=torch.long, device=dev)
     base = model.model
+    n_layers = len(getattr(base, "layers", []))
+
+    attn_outs: dict[int, object] = {}
+
+    def _attn_hook(layer_idx: int):
+        def _hook(_module, _inp, out):
+            t = out[0] if isinstance(out, tuple) else out
+            attn_outs[layer_idx] = t.detach()
+
+        return _hook
+
+    handles = [
+        base.layers[i].self_attn.register_forward_hook(_attn_hook(i))
+        for i in range(n_layers)
+    ]
 
     with torch.no_grad():
         embed_out = base.embed_tokens(input_ids)
         out = base(input_ids, output_hidden_states=True)
 
+    for h in handles:
+        h.remove()
+
     hs = out.hidden_states
     if hs is None:
         print("model did not return hidden_states", file=sys.stderr)
         sys.exit(1)
-
-    n_layers = len(getattr(base, "layers", []))
 
     print(
         f"lumen_dbg: HF reference dtype={dt} pos={line_pos} (prompt tok index); "
@@ -179,17 +195,28 @@ def main() -> None:
     )
 
     if len(hs) == n_layers + 1:
-        for i, h in enumerate(hs):
-            kind = "embed" if i == 0 else f"L{i - 1}"
-            vec = h[0, line_pos].detach().float().cpu().numpy()
-            print(vec_fp_line(arch, line_pos, kind, vec))
+        e = hs[0][0, line_pos].detach().float().cpu().numpy()
+        print(vec_fp_line(arch, line_pos, "embed", e))
+        for l in range(n_layers):
+            inp_l = hs[l][0, line_pos].detach().float().cpu().numpy()
+            ao = attn_outs[l][0, line_pos].detach().float().cpu().numpy()
+            print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
+            vec = hs[l + 1][0, line_pos].detach().float().cpu().numpy()
+            print(vec_fp_line(arch, line_pos, f"L{l}", vec))
         last_before_norm = hs[-1]
     elif len(hs) == n_layers:
         evec = embed_out[0, line_pos].detach().float().cpu().numpy()
         print(vec_fp_line(arch, line_pos, "embed", evec))
-        for i, h in enumerate(hs):
-            vec = h[0, line_pos].detach().float().cpu().numpy()
-            print(vec_fp_line(arch, line_pos, f"L{i}", vec))
+        for l in range(n_layers):
+            inp_l = (
+                evec
+                if l == 0
+                else hs[l - 1][0, line_pos].detach().float().cpu().numpy()
+            )
+            ao = attn_outs[l][0, line_pos].detach().float().cpu().numpy()
+            print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
+            vec = hs[l][0, line_pos].detach().float().cpu().numpy()
+            print(vec_fp_line(arch, line_pos, f"L{l}", vec))
         last_before_norm = hs[-1]
     else:
         print(
