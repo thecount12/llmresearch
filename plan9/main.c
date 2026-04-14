@@ -7,10 +7,44 @@ arg_is_all(char *s)
 	return s != nil && s[0] == 'a' && s[1] == 'l' && s[2] == 'l' && s[3] == '\0';
 }
 
+/*
+ * First n floats of the embedding row for token id (stderr; compare hf_hidden_ref.py --embed-row).
+ */
+static void
+dump_embed_row(Model *m, int token, int nfirst)
+{
+	Config *cfg;
+	float *buf;
+	int i;
+
+	cfg = &m->cfg;
+	if(token < 0 || token >= cfg->vocab_size){
+		fprint(2, "lumen_dump: embed_row bad id %d (vocab %d)\n", token, cfg->vocab_size);
+		return;
+	}
+	if(nfirst > cfg->dim)
+		nfirst = cfg->dim;
+	buf = malloc((ulong)cfg->dim * sizeof(float));
+	if(buf == nil){
+		fprint(2, "lumen_dump: malloc failed\n");
+		return;
+	}
+	if(m->loader_kind == LoaderGGUF)
+		embed_lookup_gguf(buf, m->token_embedding_table, token, cfg);
+	else
+		memmove(buf, m->token_embedding_table + token * cfg->dim, (ulong)cfg->dim * sizeof(float));
+	fprint(2, "lumen_dump: embed_row id=%d embed_layout=%d first_%d:",
+		token, cfg->embed_layout, nfirst);
+	for(i = 0; i < nfirst; i++)
+		fprint(2, " %g", buf[i]);
+	fprint(2, "\n");
+	free(buf);
+}
+
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a] [-F] [-D pos|all]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a] [-F] [-D pos|all] [-Z tokid]\n", argv0);
 	fprint(2, "       -c  max context length (KV cache / attention); default caps large GGUF seq_len to 4096; -c 0 = use model max\n");
 	fprint(2, "       -p  each byte is a token id (toy / byte-vocab only); for GGUF BPE models use encode_prompt_hf.py → -P\n");
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
@@ -22,6 +56,7 @@ usage(void)
 	fprint(2, "       -F  after prompt: print pre-mask logits fingerprint (greedy, sumsq, cksum, top-5) on stderr; use hf_logits_ref.py on host\n");
 	fprint(2, "       -D  forward trace: stderr lines lumen_dbg: arch=… pos=… kind=… (embed|L#|pre_logits) sumsq/cksum; arg is token position or \"all\"\n");
 	fprint(2, "            compare to hf_hidden_ref.py on host; use e.g. -D 1 for last prompt tok of a 2-token -P file\n");
+	fprint(2, "       -Z  dump first 16 floats of embedding row for token id (stderr); compare hf_hidden_ref.py --embed-row\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "            token pieces are buffered so UTF-8 bytes split across tokens decode correctly\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
@@ -428,7 +463,7 @@ main(int argc, char **argv)
 	char err[512];
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
-	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, hf_fingerprint, debug_fwd, debug_fwd_pos, pretty, bin_prompt, have_seed;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, hf_fingerprint, debug_fwd, debug_fwd_pos, embed_dump_id, pretty, bin_prompt, have_seed;
 	ForwardDebug fwd_dbg;
 	char *darg;
 	int cap_ctx;	/* -1 = default policy; 0 = full model seq_len; >0 = cap */
@@ -452,6 +487,7 @@ main(int argc, char **argv)
 	debug_fwd = 0;
 	debug_fwd_pos = 0;
 	darg = nil;
+	embed_dump_id = -1;
 	pretty = 0;
 	bin_prompt = 0;
 	have_seed = 0;
@@ -500,6 +536,9 @@ main(int argc, char **argv)
 		debug_fwd = 1;
 		darg = EARGF(usage());
 		break;
+	case 'Z':
+		embed_dump_id = atoi(EARGF(usage()));
+		break;
 	case 'a':
 		pretty = 1;
 		break;
@@ -526,6 +565,12 @@ main(int argc, char **argv)
 	}else{
 		if(init_toy_model(&model, err, sizeof err) < 0)
 			sysfatal("%s", err);
+	}
+
+	if(embed_dump_id >= 0){
+		dump_embed_row(&model, embed_dump_id, 16);
+		if(model.loader_kind != LoaderGGUF)
+			fprint(2, "lumen_dump: note: non-GGUF models use [vocab,dim] table layout for this dump\n");
 	}
 
 	orig_seq = model.cfg.seq_len;

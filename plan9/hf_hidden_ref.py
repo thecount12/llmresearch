@@ -8,6 +8,11 @@ Compare on Plan 9 (merge stderr for grep):
 
   6.out -m model.gguf -P hello2.tok -n 0 -D 1 >[2=1] | grep lumen_dbg
 
+Raw embedding row (e.g. token 19482 in hello2.tok):
+
+  python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct --embed-row 19482 --dtype float16
+  6.out -m model.gguf -Z 19482 -n 0 >[2=1] | grep lumen_dump
+
 Use -D with the same token index as the last id in -P (e.g. 1 for two ids).
 
 Use --dtype float16 to compare against F16 GGUF more closely (see hf_logits_ref.py --dtype).
@@ -63,7 +68,23 @@ def arch_label(model) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description="HF hidden-state fingerprints for lumen -D")
     ap.add_argument("-m", "--model", required=True, help="HF model id or local HF folder")
-    ap.add_argument("-p", "-P", "--prompt-file", required=True, type=Path, dest="prompt_file", metavar="TOKFILE")
+    ap.add_argument(
+        "-p",
+        "-P",
+        "--prompt-file",
+        type=Path,
+        default=None,
+        dest="prompt_file",
+        metavar="TOKFILE",
+        help="ASCII token ids (same as lumen -P); omit if only using --embed-row",
+    )
+    ap.add_argument(
+        "--embed-row",
+        type=int,
+        default=None,
+        metavar="TOKID",
+        help="print hf_dump: first 16 floats of embed_tokens.weight[row] then exit (compare lumen -Z)",
+    )
     ap.add_argument("--device", default="cpu")
     ap.add_argument(
         "--pos",
@@ -95,15 +116,16 @@ def main() -> None:
         print("hf_hidden_ref:", e, file=sys.stderr)
         sys.exit(2)
 
-    ids = parse_tok_file(args.prompt_file)
-    if not ids:
-        print("no token ids in", args.prompt_file, file=sys.stderr)
-        sys.exit(1)
+    if args.prompt_file is None and args.embed_row is None:
+        print("hf_hidden_ref: need -p TOKFILE or --embed-row ID", file=sys.stderr)
+        sys.exit(2)
 
-    line_pos = args.pos if args.pos is not None else len(ids) - 1
-    if line_pos < 0 or line_pos >= len(ids):
-        print("bad --pos", args.pos, "for", len(ids), "tokens", file=sys.stderr)
-        sys.exit(1)
+    ids = []
+    if args.prompt_file is not None:
+        ids = parse_tok_file(args.prompt_file)
+        if not ids:
+            print("no token ids in", args.prompt_file, file=sys.stderr)
+            sys.exit(1)
 
     model_id = resolve_hf_model_id(str(args.model))
     if model_id != str(args.model):
@@ -119,6 +141,23 @@ def main() -> None:
     dev = torch.device(args.device)
     model.to(dev)
     arch = arch_label(model)
+
+    if args.embed_row is not None:
+        w = model.model.embed_tokens.weight
+        if args.embed_row < 0 or args.embed_row >= w.shape[0]:
+            print("hf_hidden_ref: --embed-row out of range [0, %d)" % w.shape[0], file=sys.stderr)
+            sys.exit(2)
+        r = w[args.embed_row].detach().float().cpu().numpy().flatten()[:16]
+        print(
+            "hf_dump: embed_row id=%d first_16 %s"
+            % (args.embed_row, " ".join(f"{float(x):.8g}" for x in r))
+        )
+        sys.exit(0)
+
+    line_pos = args.pos if args.pos is not None else len(ids) - 1
+    if line_pos < 0 or line_pos >= len(ids):
+        print("bad --pos", args.pos, "for", len(ids), "tokens", file=sys.stderr)
+        sys.exit(1)
 
     input_ids = torch.tensor([ids], dtype=torch.long, device=dev)
     base = model.model
