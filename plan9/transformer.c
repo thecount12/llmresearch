@@ -70,6 +70,8 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		lw = &m->layers[l];
 
 		rmsnorm(s->xb, s->x, lw->rms_att_weight, dim, cfg->rms_eps);
+		snprint(kbuf, sizeof kbuf, "L%d_norm", l);
+		forward_debug_emit(dbg, cfg, pos, kbuf, s->xb, dim);
 		/*
 		 * GGUF maps attn_k/v as [dim, kdim] (transpose of PyTorch [kdim, dim]); use matvec_k_proj_gguf.
 		 * attn_q and attn_out are [dim, dim] with the same axis order as PyTorch [out, in] row-major;

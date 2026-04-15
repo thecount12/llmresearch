@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Print lumen_dbg lines matching lumen -D (embed, L#_attn, L#, pre_logits) for the last prompt position.
+Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_attn, L#, pre_logits) for the last prompt position.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -198,6 +198,15 @@ def main() -> None:
         e = hs[0][0, line_pos].detach().float().cpu().numpy()
         print(vec_fp_line(arch, line_pos, "embed", e))
         for l in range(n_layers):
+            nvec = (
+                base.layers[l]
+                .input_layernorm(hs[l])[0, line_pos]
+                .detach()
+                .float()
+                .cpu()
+                .numpy()
+            )
+            print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
             inp_l = hs[l][0, line_pos].detach().float().cpu().numpy()
             ao = attn_outs[l][0, line_pos].detach().float().cpu().numpy()
             print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
@@ -208,6 +217,16 @@ def main() -> None:
         evec = embed_out[0, line_pos].detach().float().cpu().numpy()
         print(vec_fp_line(arch, line_pos, "embed", evec))
         for l in range(n_layers):
+            h_in = embed_out if l == 0 else hs[l - 1]
+            nvec = (
+                base.layers[l]
+                .input_layernorm(h_in)[0, line_pos]
+                .detach()
+                .float()
+                .cpu()
+                .numpy()
+            )
+            print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
             inp_l = (
                 evec
                 if l == 0
