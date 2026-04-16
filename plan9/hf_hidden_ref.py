@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_attn, L#, pre_logits) for the last prompt position.
+Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_attn, L#, pre_logits) for the last prompt position.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -57,6 +57,20 @@ def vec_fp_line(arch: str, pos: int, kind: str, vec) -> str:
         f"lumen_dbg: arch={arch} pos={pos} kind={kind} dim={n} "
         f"sumsq={sumsq:.18g} cksum={cksum:x}x"
     )
+
+
+def qwen2_q_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos, apply_rotary_pos_emb_fn):
+    """Flattened Q after RoPE at line_pos — same layout as lumen L%d_rope (heads × head_dim)."""
+    attn = base.layers[layer_idx].self_attn
+    h_norm = base.layers[layer_idx].input_layernorm(h_in)
+    b, t, _ = h_norm.shape
+    hd = attn.head_dim
+    nh = attn.config.num_attention_heads
+    nkv = attn.config.num_key_value_heads
+    q = attn.q_proj(h_norm).view(b, t, nh, hd).transpose(1, 2)
+    k = attn.k_proj(h_norm).view(b, t, nkv, hd).transpose(1, 2)
+    q, _k = apply_rotary_pos_emb_fn(q, k, cos, sin)
+    return q[0, :, line_pos, :].contiguous().reshape(-1).float().cpu().numpy()
 
 
 def arch_label(model) -> str:
@@ -194,6 +208,26 @@ def main() -> None:
         f"match lumen -D {line_pos}"
     )
 
+    apply_rotary_pos_emb_fn = None
+    cos = None
+    sin = None
+    if arch == "qwen2":
+        try:
+            from transformers.models.qwen2.modeling_qwen2 import (
+                apply_rotary_pos_emb as apply_rotary_pos_emb_fn,
+            )
+        except ImportError:
+            apply_rotary_pos_emb_fn = None
+            print(
+                "hf_hidden_ref: could not import apply_rotary_pos_emb; skipping L*_rope lines",
+                file=sys.stderr,
+            )
+        if apply_rotary_pos_emb_fn is not None:
+            position_ids = torch.arange(
+                embed_out.shape[1], device=dev, dtype=torch.long
+            ).unsqueeze(0)
+            cos, sin = base.rotary_emb(embed_out, position_ids)
+
     if len(hs) == n_layers + 1:
         e = hs[0][0, line_pos].detach().float().cpu().numpy()
         print(vec_fp_line(arch, line_pos, "embed", e))
@@ -207,6 +241,21 @@ def main() -> None:
                 .numpy()
             )
             print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
+            if (
+                apply_rotary_pos_emb_fn is not None
+                and cos is not None
+                and sin is not None
+            ):
+                qflat = qwen2_q_flat_after_rope(
+                    base,
+                    l,
+                    hs[l],
+                    cos,
+                    sin,
+                    line_pos,
+                    apply_rotary_pos_emb_fn,
+                )
+                print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
             inp_l = hs[l][0, line_pos].detach().float().cpu().numpy()
             ao = attn_outs[l][0, line_pos].detach().float().cpu().numpy()
             print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
@@ -227,6 +276,21 @@ def main() -> None:
                 .numpy()
             )
             print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
+            if (
+                apply_rotary_pos_emb_fn is not None
+                and cos is not None
+                and sin is not None
+            ):
+                qflat = qwen2_q_flat_after_rope(
+                    base,
+                    l,
+                    h_in,
+                    cos,
+                    sin,
+                    line_pos,
+                    apply_rotary_pos_emb_fn,
+                )
+                print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
             inp_l = (
                 evec
                 if l == 0

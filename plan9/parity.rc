@@ -19,10 +19,10 @@ echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
 echo ' 6.out   '^$gguf^' -Z '^$row^' -n 0 >[2=1] | grep lumen_dump'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 echo
-echo '--- 2) hidden fingerprints (embed, L#_norm, L#_attn, L#, pre_logits): lumen -D vs hf_hidden_ref -p ---'
+echo '--- 2) hidden fingerprints (embed, L#_norm, L#_rope, L#_attn, L#, pre_logits): lumen -D vs hf_hidden_ref -p ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >[2=1] | grep lumen_dbg'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
-echo ' If L0_norm mismatches, bug is in pre-attn RMSNorm (weights/eps); if L0_norm ok but L0_attn wrong, bug is Q/K/V/RoPE/attn/O.'
+echo ' L0_norm vs HF: RMSNorm. L0_rope vs HF: Q after RoPE (if match, RoPE+proj ok; then bug in attn softmax/V/O).'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 1 -F >[2=1] | grep lumen_hf'

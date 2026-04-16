@@ -91,6 +91,8 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 			accum(s->v, lw->bv, kdim);
 		}
 		rope_apply(s->q, s->k, pos, cfg);
+		snprint(kbuf, sizeof kbuf, "L%d_rope", l);
+		forward_debug_emit(dbg, cfg, pos, kbuf, s->q, dim);
 
 		kcache = s->cache.k + (l * cfg->seq_len + pos) * kdim;
 		vcache = s->cache.v + (l * cfg->seq_len + pos) * kdim;
