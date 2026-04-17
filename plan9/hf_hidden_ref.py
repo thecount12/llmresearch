@@ -59,7 +59,25 @@ def vec_fp_line(arch: str, pos: int, kind: str, vec) -> str:
     )
 
 
-def qwen2_q_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos, apply_rotary_pos_emb_fn):
+def _hf_rotate_half(x):
+    """Same as transformers Qwen2 rotate_half (last-dim halves)."""
+    import torch
+
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+
+def _hf_apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim: int = 1):
+    """Eager RoPE used by Qwen2 (avoids importing modeling_qwen2, which can fail on some installs)."""
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (_hf_rotate_half(q) * sin)
+    k_embed = (k * cos) + (_hf_rotate_half(k) * sin)
+    return q_embed, k_embed
+
+
+def qwen2_q_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos):
     """Flattened Q after RoPE at line_pos — same layout as lumen L%d_rope (heads × head_dim)."""
     attn = base.layers[layer_idx].self_attn
     h_norm = base.layers[layer_idx].input_layernorm(h_in)
@@ -69,8 +87,15 @@ def qwen2_q_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos, apply_rot
     nkv = attn.config.num_key_value_heads
     q = attn.q_proj(h_norm).view(b, t, nh, hd).transpose(1, 2)
     k = attn.k_proj(h_norm).view(b, t, nkv, hd).transpose(1, 2)
-    q, _k = apply_rotary_pos_emb_fn(q, k, cos, sin)
-    return q[0, :, line_pos, :].contiguous().reshape(-1).float().cpu().numpy()
+    q, _k = _hf_apply_rotary_pos_emb(q, k, cos, sin)
+    return (
+        q[0, :, line_pos, :]
+        .detach()
+        .contiguous()
+        .float()
+        .cpu()
+        .numpy()
+    )
 
 
 def arch_label(model) -> str:
@@ -208,25 +233,13 @@ def main() -> None:
         f"match lumen -D {line_pos}"
     )
 
-    apply_rotary_pos_emb_fn = None
     cos = None
     sin = None
     if arch == "qwen2":
-        try:
-            from transformers.models.qwen2.modeling_qwen2 import (
-                apply_rotary_pos_emb as apply_rotary_pos_emb_fn,
-            )
-        except ImportError:
-            apply_rotary_pos_emb_fn = None
-            print(
-                "hf_hidden_ref: could not import apply_rotary_pos_emb; skipping L*_rope lines",
-                file=sys.stderr,
-            )
-        if apply_rotary_pos_emb_fn is not None:
-            position_ids = torch.arange(
-                embed_out.shape[1], device=dev, dtype=torch.long
-            ).unsqueeze(0)
-            cos, sin = base.rotary_emb(embed_out, position_ids)
+        position_ids = torch.arange(
+            embed_out.shape[1], device=dev, dtype=torch.long
+        ).unsqueeze(0)
+        cos, sin = base.rotary_emb(embed_out, position_ids)
 
     if len(hs) == n_layers + 1:
         e = hs[0][0, line_pos].detach().float().cpu().numpy()
@@ -241,19 +254,9 @@ def main() -> None:
                 .numpy()
             )
             print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
-            if (
-                apply_rotary_pos_emb_fn is not None
-                and cos is not None
-                and sin is not None
-            ):
+            if arch == "qwen2" and cos is not None and sin is not None:
                 qflat = qwen2_q_flat_after_rope(
-                    base,
-                    l,
-                    hs[l],
-                    cos,
-                    sin,
-                    line_pos,
-                    apply_rotary_pos_emb_fn,
+                    base, l, hs[l], cos, sin, line_pos
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
             inp_l = hs[l][0, line_pos].detach().float().cpu().numpy()
@@ -276,19 +279,9 @@ def main() -> None:
                 .numpy()
             )
             print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
-            if (
-                apply_rotary_pos_emb_fn is not None
-                and cos is not None
-                and sin is not None
-            ):
+            if arch == "qwen2" and cos is not None and sin is not None:
                 qflat = qwen2_q_flat_after_rope(
-                    base,
-                    l,
-                    h_in,
-                    cos,
-                    sin,
-                    line_pos,
-                    apply_rotary_pos_emb_fn,
+                    base, l, h_in, cos, sin, line_pos
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
             inp_l = (
