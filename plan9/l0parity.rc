@@ -14,8 +14,16 @@ if(~ $#pos 0) pos=1
 if(~ $#run 0) run=0
 if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
 
+# Docs often write /sys/src/cmd/.../file.gguf; "..." is not a real path segment.
+if(~ $gguf */.../*)
+	echo '[l0parity] gguf contains /.../ — replace with your real directories (ellipsis is not valid in paths).'
+
 echo '--- Plan 9: L0_norm L0_rope L0_krope L0_attn ---'
 if(~ $run 1) {
+	if(! test -r $tok) {
+		cwd=`{pwd}
+		echo '[l0parity] cannot read '^$tok^' cwd='^$cwd^'; repo has hello2.tok hello.tok hello_plain.tok'
+	}
 	tmp=/tmp/l0parity.$pid.out
 	6.out -m $gguf -P $tok -n 0 -D $pos >[2=1] >$tmp
 	outst=$status
