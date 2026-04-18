@@ -1,5 +1,6 @@
 #!/bin/rc
-# Layer-0 attention bisect. Merge stderr: >[2=1]
+# Layer-0 attention bisect. Merge stderr into file: rc applies redirs left-to-right,
+# so use >$tmp >[2=1] (NOT >[2=1] >$tmp — that leaves stderr on the terminal).
 #
 #   rc l0parity.rc
 #   run=1 rc l0parity.rc
@@ -33,7 +34,7 @@ if(~ $run 1) {
 	}
 	if(~ $skip 0) {
 		tmp=/tmp/l0parity.$pid.out
-		6.out -m $gguf -P $tok -n 0 -D $pos >[2=1] >$tmp
+		6.out -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
 		outst=$status
 		# rc: $status is empty on success, else a wait msg (not numeric).
 		if(! ~ $#outst 0)

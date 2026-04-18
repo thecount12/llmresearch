@@ -1,6 +1,6 @@
 #!/bin/rc
 # HF vs lumen parity ladder (Qwen2.5 + GGUF). Run Python on a host with torch/transformers;
-# run 6.out on Plan 9 after mk. Merge stderr on Plan 9: >[2=1]
+# run 6.out on Plan 9 after mk. Merge stderr into stdout file: >file >[2=1] (see rc(1))
 #
 # Set these or export before sourcing:
 #   gguf=Qwen2.5-0.5B-Instruct-f16.gguf
@@ -16,16 +16,16 @@ if(~ $#row 0) row=19482
 if(~ $#pos 0) pos=1
 
 echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
-echo ' 6.out   '^$gguf^' -Z '^$row^' -n 0 >[2=1] | grep lumen_dump'
+echo ' 6.out   '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out >[2=1]; grep lumen_dump /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 echo
 echo '--- 2) hidden fingerprints (embed, L#_norm, L#_rope, L#_krope, L#_attn, L#, pre_logits): lumen -D vs hf_hidden_ref -p ---'
-echo ' 6.out   '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >[2=1] | grep lumen_dbg'
+echo ' 6.out   '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo ' L0_krope vs HF: K after RoPE (kv_heads×head_dim). If L0_rope ok but L0_krope wrong: k_proj or K RoPE layout.'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref ---'
-echo ' 6.out   '^$gguf^' -P '^$tok^' -n 1 -F >[2=1] | grep lumen_hf'
+echo ' 6.out   '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo
 echo 'Next if embed matches but later steps diverge: bisect layer-by-layer (-D),'

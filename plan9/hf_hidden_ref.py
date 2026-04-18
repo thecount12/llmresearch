@@ -4,14 +4,14 @@ Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L#_a
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
-Compare on Plan 9 (merge stderr for grep):
+Compare on Plan 9 (rc redirs are left-to-right: put stdout in a file, then dup 2 onto 1):
 
-  6.out -m model.gguf -P hello2.tok -n 0 -D 1 >[2=1] | grep lumen_dbg
+  6.out -m model.gguf -P hello2.tok -n 0 -D 1 >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out
 
 Raw embedding row (e.g. token 19482 in hello2.tok):
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct --embed-row 19482 --dtype float16
-  6.out -m model.gguf -Z 19482 -n 0 >[2=1] | grep lumen_dump
+  6.out -m model.gguf -Z 19482 -n 0 >/tmp/lumen.out >[2=1]; grep lumen_dump /tmp/lumen.out
 
 Use -D with the same token index as the last id in -P (e.g. 1 for two ids).
 
