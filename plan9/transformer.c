@@ -123,6 +123,12 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 				s->att[h * cfg->seq_len + t] = score;
 			}
 			softmax(s->att + h * cfg->seq_len + t_start, natt);
+			if(l == 0 && h == 0 && dbg != nil && dbg->enabled &&
+			   (dbg->pos_filter < 0 || pos == dbg->pos_filter)){
+				snprint(kbuf, sizeof kbuf, "L0_probs_h0");
+				forward_debug_emit(dbg, cfg, pos, kbuf,
+					s->att + h * cfg->seq_len + t_start, natt);
+			}
 
 			for(i = 0; i < head_dim; i++)
 				s->xb2[h * head_dim + i] = 0.0f;

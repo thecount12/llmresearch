@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
+Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L0_probs_h0, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -35,6 +35,27 @@ from hf_logits_ref import (
     parse_torch_dtype,
     resolve_hf_model_id,
 )
+
+
+def load_causal_lm_eager(model_id: str, dt):
+    """from_pretrained with eager attention so output_attentions returns weights (not SDPA None)."""
+    from transformers import AutoModelForCausalLM
+
+    kw = {"low_cpu_mem_usage": True, "attn_implementation": "eager"}
+    try:
+        return AutoModelForCausalLM.from_pretrained(model_id, dtype=dt, **kw)
+    except TypeError:
+        try:
+            return AutoModelForCausalLM.from_pretrained(
+                model_id, torch_dtype=dt, **kw
+            )
+        except TypeError:
+            pass
+    print(
+        "hf_hidden_ref: eager attention unavailable; L0_probs_h0 will be missing",
+        file=sys.stderr,
+    )
+    return load_causal_lm(model_id, dt)
 
 
 def vec_fp_line(arch: str, pos: int, kind: str, vec) -> str:
@@ -184,7 +205,7 @@ def main() -> None:
         print(f"hf_hidden_ref: using Hub id {model_id!r}", file=sys.stderr)
     print(f"hf_hidden_ref: dtype={dt}", file=sys.stderr)
 
-    model = load_causal_lm(model_id, dt)
+    model = load_causal_lm_eager(model_id, dt)
     model.eval()
     dev = torch.device(args.device)
     model.to(dev)
@@ -239,12 +260,17 @@ def main() -> None:
 
     with torch.no_grad():
         embed_out = base.embed_tokens(input_ids)
-        out = base(input_ids, output_hidden_states=True)
+        out = base(
+            input_ids,
+            output_hidden_states=True,
+            output_attentions=True,
+        )
 
     for h in handles + handles_opre:
         h.remove()
 
     hs = out.hidden_states
+    attns = getattr(out, "attentions", None)
     if hs is None:
         print("model did not return hidden_states", file=sys.stderr)
         sys.exit(1)
@@ -281,6 +307,20 @@ def main() -> None:
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
+            if (
+                l == 0
+                and attns is not None
+                and len(attns) > 0
+                and attns[0] is not None
+            ):
+                probs = (
+                    attns[0][0, 0, line_pos, : line_pos + 1]
+                    .detach()
+                    .float()
+                    .cpu()
+                    .numpy()
+                )
+                print(vec_fp_line(arch, line_pos, "L0_probs_h0", probs))
             if l in pre_attn_outs:
                 pa = (
                     pre_attn_outs[l][0, line_pos]
@@ -316,6 +356,20 @@ def main() -> None:
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
+            if (
+                l == 0
+                and attns is not None
+                and len(attns) > 0
+                and attns[0] is not None
+            ):
+                probs = (
+                    attns[0][0, 0, line_pos, : line_pos + 1]
+                    .detach()
+                    .float()
+                    .cpu()
+                    .numpy()
+                )
+                print(vec_fp_line(arch, line_pos, "L0_probs_h0", probs))
             if l in pre_attn_outs:
                 pa = (
                     pre_attn_outs[l][0, line_pos]
