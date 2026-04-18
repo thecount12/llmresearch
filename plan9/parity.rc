@@ -19,10 +19,10 @@ echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
 echo ' 6.out   '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out >[2=1]; grep lumen_dump /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 echo
-echo '--- 2) hidden fingerprints (embed, L#_norm, L#_rope, L#_krope, L#_attn, L#, pre_logits): lumen -D vs hf_hidden_ref -p ---'
+echo '--- 2) hidden fingerprints (embed, L#_norm, L#_rope, L#_krope, L#_preatn, L#_attn, L#, pre_logits): lumen -D vs hf_hidden_ref -p ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
-echo ' L0_krope vs HF: K after RoPE (kv_heads×head_dim). If L0_rope ok but L0_krope wrong: k_proj or K RoPE layout.'
+echo ' L0_krope vs HF: K after RoPE. L0_preatn: concat heads after softmax@V, before o_proj (bisects MHA vs attn_output.weight).'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'

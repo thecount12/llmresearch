@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L#_attn, L#, pre_logits) for the last prompt position.
+Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -212,6 +212,7 @@ def main() -> None:
     n_layers = len(getattr(base, "layers", []))
 
     attn_outs: dict[int, object] = {}
+    pre_attn_outs: dict[int, object] = {}
 
     def _attn_hook(layer_idx: int):
         def _hook(_module, _inp, out):
@@ -220,16 +221,27 @@ def main() -> None:
 
         return _hook
 
+    def _opre_hook(layer_idx: int):
+        def _hook(_module, inp, _out):
+            pre_attn_outs[layer_idx] = inp[0].detach()
+
+        return _hook
+
     handles = [
         base.layers[i].self_attn.register_forward_hook(_attn_hook(i))
         for i in range(n_layers)
     ]
+    handles_opre = []
+    for i in range(n_layers):
+        op = getattr(base.layers[i].self_attn, "o_proj", None)
+        if op is not None:
+            handles_opre.append(op.register_forward_hook(_opre_hook(i)))
 
     with torch.no_grad():
         embed_out = base.embed_tokens(input_ids)
         out = base(input_ids, output_hidden_states=True)
 
-    for h in handles:
+    for h in handles + handles_opre:
         h.remove()
 
     hs = out.hidden_states
@@ -269,6 +281,15 @@ def main() -> None:
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
+            if l in pre_attn_outs:
+                pa = (
+                    pre_attn_outs[l][0, line_pos]
+                    .detach()
+                    .float()
+                    .cpu()
+                    .numpy()
+                )
+                print(vec_fp_line(arch, line_pos, f"L{l}_preatn", pa))
             inp_l = hs[l][0, line_pos].detach().float().cpu().numpy()
             ao = attn_outs[l][0, line_pos].detach().float().cpu().numpy()
             print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
@@ -295,6 +316,15 @@ def main() -> None:
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
+            if l in pre_attn_outs:
+                pa = (
+                    pre_attn_outs[l][0, line_pos]
+                    .detach()
+                    .float()
+                    .cpu()
+                    .numpy()
+                )
+                print(vec_fp_line(arch, line_pos, f"L{l}_preatn", pa))
             inp_l = (
                 evec
                 if l == 0

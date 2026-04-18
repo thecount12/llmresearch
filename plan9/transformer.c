@@ -136,6 +136,9 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 			}
 		}
 
+		snprint(kbuf, sizeof kbuf, "L%d_preatn", l);
+		forward_debug_emit(dbg, cfg, pos, kbuf, s->xb2, dim);
+
 		matvec(s->xb, lw->wo, s->xb2, dim, dim);
 		accum(s->x, s->xb, dim);
 		snprint(kbuf, sizeof kbuf, "L%d_attn", l);

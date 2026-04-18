@@ -8,6 +8,7 @@
 #
 # If you see no L0_ lines, check the printed 6.out status and the
 # first lines of merged output (often bad -m path or missing 6.out).
+# After changing transformer.c, run mk so 6.out includes L#_preatn.
 
 if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
 if(~ $#tok 0) tok=hello2.tok
@@ -19,7 +20,7 @@ if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
 if(~ $gguf */.../*)
 	echo '[l0parity] gguf contains /.../ — replace with your real directories (ellipsis is not valid in paths).'
 
-echo '--- Plan 9: L0_norm L0_rope L0_krope L0_attn ---'
+echo '--- Plan 9: L0_norm L0_rope L0_krope L0_preatn L0_attn ---'
 if(~ $run 1) {
 	skip=0
 	if(! test -r $gguf) {
