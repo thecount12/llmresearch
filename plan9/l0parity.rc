@@ -20,24 +20,33 @@ if(~ $gguf */.../*)
 
 echo '--- Plan 9: L0_norm L0_rope L0_krope L0_attn ---'
 if(~ $run 1) {
+	skip=0
+	if(! test -r $gguf) {
+		cwd=`{pwd}
+		echo '[l0parity] cannot read '^$gguf^' cwd='^$cwd
+		skip=1
+	}
 	if(! test -r $tok) {
 		cwd=`{pwd}
 		echo '[l0parity] cannot read '^$tok^' cwd='^$cwd^'; repo has hello2.tok hello.tok hello_plain.tok'
+		skip=1
 	}
-	tmp=/tmp/l0parity.$pid.out
-	6.out -m $gguf -P $tok -n 0 -D $pos >[2=1] >$tmp
-	outst=$status
-	# rc: $status is empty on success, else a wait msg (not numeric).
-	if(! ~ $#outst 0)
-		echo '[l0parity] 6.out failed:' $outst
-	grep 'lumen_dbg.*L0_' $tmp
-	grepst=$status
-	if(! ~ $#grepst 0) {
-		echo '[l0parity] no lumen_dbg L0_* lines; grep:' $grepst
-		echo '[l0parity] first 16 merged lines:'
-		sed '16q' $tmp
+	if(~ $skip 0) {
+		tmp=/tmp/l0parity.$pid.out
+		6.out -m $gguf -P $tok -n 0 -D $pos >[2=1] >$tmp
+		outst=$status
+		# rc: $status is empty on success, else a wait msg (not numeric).
+		if(! ~ $#outst 0)
+			echo '[l0parity] 6.out failed:' $outst
+		grep 'lumen_dbg.*L0_' $tmp
+		grepst=$status
+		if(! ~ $#grepst 0) {
+			echo '[l0parity] no lumen_dbg L0_* lines; grep:' $grepst
+			echo '[l0parity] first 16 merged lines:'
+			sed '16q' $tmp
+		}
+		rm -f $tmp
 	}
-	rm -f $tmp
 }
 if not
 	echo 'Dry run (no 6.out). Use: run=1 rc l0parity.rc'
