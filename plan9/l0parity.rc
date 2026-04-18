@@ -4,6 +4,9 @@
 #   rc l0parity.rc
 #   run=1 rc l0parity.rc
 #   gguf=model.gguf tok=my.tok pos=1 run=1 rc l0parity.rc
+#
+# If you see no L0_ lines, check the printed 6.out status and the
+# first lines of merged output (often bad -m path or missing 6.out).
 
 if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
 if(~ $#tok 0) tok=hello2.tok
@@ -12,8 +15,20 @@ if(~ $#run 0) run=0
 if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
 
 echo '--- Plan 9: L0_norm L0_rope L0_krope L0_attn ---'
-if(~ $run 1)
-	6.out -m $gguf -P $tok -n 0 -D $pos >[2=1] | grep 'lumen_dbg.*L0_'
+if(~ $run 1) {
+	tmp=/tmp/l0parity.$pid.out
+	6.out -m $gguf -P $tok -n 0 -D $pos >[2=1] >$tmp
+	outst=$status
+	if(! ~ $outst 0)
+		echo '[l0parity] 6.out exit status '^$outst^' (non-zero: model path, -P file, or binary)'
+	grep 'lumen_dbg.*L0_' $tmp
+	grepst=$status
+	if(! ~ $grepst 0) {
+		echo '[l0parity] no lumen_dbg L0_* lines (grep exit '^$grepst^'); first 16 merged lines:'
+		sed '16q' $tmp
+	}
+	rm -f $tmp
+}
 if not
 	echo 'Dry run (no 6.out). Use: run=1 rc l0parity.rc'
 
