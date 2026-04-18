@@ -35,14 +35,15 @@ if(~ $run 1) {
 	if(~ $skip 0) {
 		tmp=/tmp/l0parity.$pid.out
 		6.out -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
-		outst=$status
-		# rc: $status is empty on success, else a wait msg (not numeric).
-		if(! ~ $#outst 0)
-			echo '[l0parity] 6.out failed:' $outst
+		ost=$status
 		grep 'lumen_dbg.*L0_' $tmp
-		grepst=$status
-		if(! ~ $#grepst 0) {
-			echo '[l0parity] no lumen_dbg L0_* lines; grep:' $grepst
+		gst=$status
+		# Null exit → empty $status; do not use $#var (empty status can
+		# still look like one empty word). ~ overwrites $status; use ost/gst.
+		if(~ $ost ?*)
+			echo '[l0parity] 6.out failed:' $ost
+		if(~ $gst ?*) {
+			echo '[l0parity] no lumen_dbg L0_* lines; grep:' $gst
 			echo '[l0parity] first 16 merged lines:'
 			sed '16q' $tmp
 		}
