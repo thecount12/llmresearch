@@ -1,0 +1,26 @@
+#!/bin/rc
+# Layer-0 attention bisect on Plan 9: run 6.out and print L0_* lines.
+# Compare to hf_hidden_ref on a host (same repo dir, python3).
+#
+#   rc l0parity.rc
+#   gguf=/path/to/model.gguf tok=my.tok pos=1 rc l0parity.rc
+#
+# Optional: set `run=1` to execute 6.out (default only echoes commands).
+
+if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
+if(~ $#tok 0) tok=hello2.tok
+if(~ $#pos 0) pos=1
+if(~ $#run 0) run=0
+if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
+
+echo '=== Plan 9: L0_norm L0_rope L0_krope L0_attn (merge stderr) ==='
+if(~ $run 1)
+	6.out -m $gguf -P $tok -n 0 -D $pos >[2=1] | grep 'lumen_dbg.*L0_'
+if not
+	echo '6.out -m '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >[2=1] | grep ''lumen_dbg.*L0_''
+
+echo
+echo '=== Host (from plan9/ directory): match L0_* ==='
+echo 'python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --dtype float16 | grep ''lumen_dbg.*L0_''
+echo
+echo 'Read: L0_norm=RMS; L0_rope=Q; L0_krope=K; L0_attn=residual+attn. If rope ok but krope wrong, check k_proj/GGUF K layout.'
