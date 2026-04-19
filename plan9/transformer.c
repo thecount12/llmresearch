@@ -40,6 +40,7 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 	LayerWeights *lw;
 	float *kcache, *vcache, *qhead, *kvec, *vvec;
 	float score, inv_scale;
+	double dscore;
 	int l, i, t, h, dim, head_dim, n_heads, n_kv_heads, kv_repeat, kdim, kvh;
 	int t_start, natt, ti;
 	char kbuf[24];
@@ -119,28 +120,31 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 			for(ti = 0; ti < natt; ti++){
 				t = t_start + ti;
 				kvec = s->cache.k + (l * cfg->seq_len + t) * kdim + kvh * head_dim;
-				score = dot(qhead, kvec, head_dim) * inv_scale;
+				dscore = 0.0;
+				for(i = 0; i < head_dim; i++)
+					dscore += (double)qhead[i] * (double)kvec[i];
+				score = (float)(dscore * (double)inv_scale);
 				s->att[h * cfg->seq_len + t] = score;
 			}
 			if(l == 0 && h == 0 && dbg != nil && dbg->enabled &&
 			   (dbg->pos_filter < 0 || pos == dbg->pos_filter))
 				forward_debug_emit(dbg, cfg, pos, "L0_logits_h0",
 					s->att + h * cfg->seq_len + t_start, natt);
-			softmax(s->att + h * cfg->seq_len + t_start, natt);
+			softmax_f64norm(s->att + h * cfg->seq_len + t_start, natt);
 			if(l == 0 && h == 0 && dbg != nil && dbg->enabled &&
 			   (dbg->pos_filter < 0 || pos == dbg->pos_filter))
 				forward_debug_emit(dbg, cfg, pos, "L0_probs_h0",
 					s->att + h * cfg->seq_len + t_start, natt);
 
-			for(i = 0; i < head_dim; i++)
-				s->xb2[h * head_dim + i] = 0.0f;
-
-			for(ti = 0; ti < natt; ti++){
-				t = t_start + ti;
-				vvec = s->cache.v + (l * cfg->seq_len + t) * kdim + kvh * head_dim;
-				score = s->att[h * cfg->seq_len + t];
-				for(i = 0; i < head_dim; i++)
-					s->xb2[h * head_dim + i] += score * vvec[i];
+			for(i = 0; i < head_dim; i++){
+				dscore = 0.0;
+				for(ti = 0; ti < natt; ti++){
+					t = t_start + ti;
+					vvec = s->cache.v + (l * cfg->seq_len + t) * kdim + kvh * head_dim;
+					score = s->att[h * cfg->seq_len + t];
+					dscore += (double)score * (double)vvec[i];
+				}
+				s->xb2[h * head_dim + i] = (float)dscore;
 			}
 		}
 

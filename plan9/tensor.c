@@ -69,6 +69,33 @@ softmax(float *x, int n)
 		x[i] /= sum;
 }
 
+/*
+ * Softmax with float64 normalization sum (closer to PyTorch F.softmax(..., dtype=float32)).
+ */
+void
+softmax_f64norm(float *x, int n)
+{
+	int i;
+	float maxv;
+	double sum;
+
+	if(n <= 0)
+		return;
+	maxv = x[0];
+	for(i = 1; i < n; i++)
+		if(x[i] > maxv)
+			maxv = x[i];
+	sum = 0.0;
+	for(i = 0; i < n; i++){
+		x[i] = expf(x[i] - maxv);
+		sum += (double)x[i];
+	}
+	if(sum == 0.0)
+		return;
+	for(i = 0; i < n; i++)
+		x[i] = (float)((double)x[i] / sum);
+}
+
 void
 rmsnorm(float *out, float *x, float *weight, int n, float eps)
 {
@@ -213,19 +240,21 @@ rope_apply(float *q, float *k, int pos, Config *cfg)
 	float base, ang, c, s;
 	float q0, q1, k0, k1;
 	int i0, i1;
+	double based;
 
 	head_dim = cfg->dim / cfg->n_heads;
 	half = head_dim / 2;
 	kv_head_dim = head_dim;
 	kv_repeat = cfg->n_heads / cfg->n_kv_heads;
 	base = cfg->rope_freq_base > 0 ? cfg->rope_freq_base : 10000.0f;
+	based = (double)base;
 
 	for(h = 0; h < cfg->n_heads; h++){
 		for(ic = 0; ic < half; ic++){
-			/* Same θ schedule as ggml: angle = pos * base^(-2*ic/head_dim) */
-			ang = pos * pow(base, -2.0f * (float)ic / (float)head_dim);
-			c = cos(ang);
-			s = sin(ang);
+			/* Same θ schedule as ggml / HF inv_freq: pos * base^(-2*ic/head_dim) */
+			ang = (float)((double)pos * pow(based, -2.0 * (double)ic / (double)head_dim));
+			c = cos((double)ang);
+			s = sin((double)ang);
 
 			if(cfg->rope_type == RopeNeox){
 				/* GGML_ROPE_TYPE_NEOX: rotate (ic, ic + half) */

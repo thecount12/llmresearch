@@ -67,7 +67,7 @@ sample_with_temperature(float *logits, int n, float temperature)
 
 	for(i = 0; i < n; i++)
 		logits[i] /= temperature;
-	softmax(logits, n);
+	softmax_f64norm(logits, n);
 
 	r = (float)nrand(1000000) / 1000000.0f;
 	cdf = 0.0f;
