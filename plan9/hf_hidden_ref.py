@@ -158,6 +158,13 @@ def qwen2_l0_head0_logits(base, h_in, cos, sin, line_pos, sliding_window: int):
     return torch.stack(out).detach().float().cpu().numpy()
 
 
+def effective_attn_sliding_window(config) -> int:
+    """HF Qwen2 applies sliding attention only when use_sliding_window is True."""
+    if not bool(getattr(config, "use_sliding_window", False)):
+        return 0
+    return int(getattr(config, "sliding_window", 0) or 0)
+
+
 def arch_label(model) -> str:
     mt = (getattr(model.config, "model_type", "") or "").lower()
     if "qwen2" in mt:
@@ -288,6 +295,20 @@ def main() -> None:
         if op is not None:
             handles_opre.append(op.register_forward_hook(_opre_hook(i)))
 
+    norm = getattr(base, "norm", None)
+    if norm is None:
+        norm = getattr(base, "final_layernorm", None)
+    if norm is None:
+        print("no norm on base model", file=sys.stderr)
+        sys.exit(1)
+
+    pre_norm_state: dict[str, object] = {}
+
+    def _capture_pre_final_norm(_m, inp):
+        pre_norm_state["x"] = inp[0].detach()
+
+    handles_norm = [norm.register_forward_pre_hook(_capture_pre_final_norm)]
+
     with torch.no_grad():
         embed_out = base.embed_tokens(input_ids)
         out = base(
@@ -296,7 +317,7 @@ def main() -> None:
             output_attentions=True,
         )
 
-    for h in handles + handles_opre:
+    for h in handles + handles_opre + handles_norm:
         h.remove()
 
     hs = out.hidden_states
@@ -338,7 +359,7 @@ def main() -> None:
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
                 if l == 0:
-                    sw = int(getattr(model.config, "sliding_window", 0) or 0)
+                    sw = effective_attn_sliding_window(model.config)
                     lg = qwen2_l0_head0_logits(
                         base, hs[l], cos, sin, line_pos, sw
                     )
@@ -369,9 +390,17 @@ def main() -> None:
             inp_l = hs[l][0, line_pos].detach().float().cpu().numpy()
             ao = attn_outs[l][0, line_pos].detach().float().cpu().numpy()
             print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
-            vec = hs[l + 1][0, line_pos].detach().float().cpu().numpy()
+            if l == n_layers - 1:
+                vec = (
+                    pre_norm_state["x"][0, line_pos]
+                    .detach()
+                    .float()
+                    .cpu()
+                    .numpy()
+                )
+            else:
+                vec = hs[l + 1][0, line_pos].detach().float().cpu().numpy()
             print(vec_fp_line(arch, line_pos, f"L{l}", vec))
-        last_before_norm = hs[-1]
     elif len(hs) == n_layers:
         evec = embed_out[0, line_pos].detach().float().cpu().numpy()
         print(vec_fp_line(arch, line_pos, "embed", evec))
@@ -393,7 +422,7 @@ def main() -> None:
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
                 if l == 0:
-                    sw = int(getattr(model.config, "sliding_window", 0) or 0)
+                    sw = effective_attn_sliding_window(model.config)
                     lg = qwen2_l0_head0_logits(
                         base, h_in, cos, sin, line_pos, sw
                     )
@@ -430,7 +459,6 @@ def main() -> None:
             print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
             vec = hs[l][0, line_pos].detach().float().cpu().numpy()
             print(vec_fp_line(arch, line_pos, f"L{l}", vec))
-        last_before_norm = hs[-1]
     else:
         print(
             f"hf_hidden_ref: unexpected hidden_states len={len(hs)} n_layers={n_layers}",
@@ -438,15 +466,19 @@ def main() -> None:
         )
         sys.exit(1)
 
-    norm = getattr(base, "norm", None)
-    if norm is None:
-        norm = getattr(base, "final_layernorm", None)
-    if norm is None:
-        print("no norm on base model", file=sys.stderr)
+    if "x" not in pre_norm_state:
+        print(
+            "hf_hidden_ref: final norm forward_pre_hook did not fire",
+            file=sys.stderr,
+        )
         sys.exit(1)
-
-    seg = last_before_norm[:, line_pos : line_pos + 1, :]
-    pre = norm(seg)[0, 0].detach().float().cpu().numpy()
+    # Same tensor as lumen pre_logits: final RMSNorm output, input to lm_head.
+    lhs = getattr(out, "last_hidden_state", None)
+    if lhs is not None:
+        pre = lhs[0, line_pos].detach().float().cpu().numpy()
+    else:
+        seg = pre_norm_state["x"][:, line_pos : line_pos + 1, :]
+        pre = norm(seg)[0, 0].detach().float().cpu().numpy()
     print(vec_fp_line(arch, line_pos, "pre_logits", pre))
 
 

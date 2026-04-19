@@ -54,6 +54,7 @@ struct GGUFInfo {
 	uvlong sliding_window;
 	int eos_token_id;	/* tokenizer.ggml.eos_token_id; -1 if absent */
 	int pad_token_id;	/* tokenizer.ggml.padding_token_id; -1 if absent */
+	int use_sliding_kv;	/* -1 absent; 0/1 from KV *use_sliding_window* (Qwen2 HF parity) */
 };
 
 struct GGUFMap {
@@ -471,6 +472,8 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 			return -1;
 		if(strcmp(key, "tokenizer.ggml.tokens") == 0)
 			gi->vocab_size = u8;
+		if(strstr(key, "use_sliding_window") != nil)
+			gi->use_sliding_kv = u8 ? 1 : 0;
 		return 0;
 	case GGUFUint16:
 	case GGUFInt16:
@@ -487,6 +490,8 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 			gi->eos_token_id = (int)u32;
 		if(strcmp(key, "tokenizer.ggml.padding_token_id") == 0)
 			gi->pad_token_id = (int)u32;
+		if(strstr(key, "use_sliding_window") != nil)
+			gi->use_sliding_kv = u32 ? 1 : 0;
 		setinfo_u64(gi, key, u32);
 		return 0;
 	case GGUFFloat32:
@@ -504,6 +509,8 @@ parse_metadata_value(int fd, GGUFInfo *gi, char *key, ulong type)
 			gi->eos_token_id = (int)u64;
 		if(strcmp(key, "tokenizer.ggml.padding_token_id") == 0 && u64 < 0x7fffffffULL)
 			gi->pad_token_id = (int)u64;
+		if(strstr(key, "use_sliding_window") != nil)
+			gi->use_sliding_kv = u64 ? 1 : 0;
 		setinfo_u64(gi, key, u64);
 		return 0;
 	case GGUFFloat64:
@@ -1026,6 +1033,7 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	memset(&gi, 0, sizeof gi);
 	gi.eos_token_id = -1;
 	gi.pad_token_id = -1;
+	gi.use_sliding_kv = -1;
 	memset(&gm, 0, sizeof gm);
 	memset(&gp, 0, sizeof gp);
 	memset(&cfg, 0, sizeof cfg);
@@ -1077,6 +1085,17 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		cfg.sliding_window = 0x7fffffff;
 	else
 		cfg.sliding_window = (int)gi.sliding_window;
+	/*
+	 * HF Qwen2 dense (e.g. Qwen2.5-Instruct) sets use_sliding_window=false while still
+	 * advertising a numeric sliding_window in config; attention is full causal. GGUF may
+	 * omit the bool: default -1 means treat like HF false. If KV sets use_sliding_window
+	 * true, keep cfg.sliding_window from .attention.sliding_window.
+	 */
+	if((strstr(gi.architecture, "qwen2") != nil || strstr(gi.architecture, "Qwen2") != nil)
+	    && strstr(gi.architecture, "moe") == nil && strstr(gi.architecture, "MoE") == nil){
+		if(gi.use_sliding_kv != 1)
+			cfg.sliding_window = 0;
+	}
 
 	cfg.arch = ArchLlama;
 	if(strstr(gi.architecture, "qwen2") != nil || strstr(gi.architecture, "Qwen2") != nil){

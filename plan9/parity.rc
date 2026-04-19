@@ -1,6 +1,7 @@
 #!/bin/rc
 # HF vs lumen parity ladder (Qwen2.5 + GGUF). Run Python on a host with torch/transformers;
-# run 6.out on Plan 9 after mk. Merge stderr into stdout file: >file >[2=1] (see rc(1))
+# On Plan 9, mk (see mkfile) installs the binary as lumen in $home/bin/$objtype — not 6.out.
+# Substitute lumen for 6.out below if that is what you run. Merge stderr into stdout: >file >[2=1] (see rc(1))
 #
 # Set these or export before sourcing:
 #   gguf=Qwen2.5-0.5B-Instruct-f16.gguf
@@ -16,19 +17,20 @@ if(~ $#row 0) row=19482
 if(~ $#pos 0) pos=1
 
 echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
-echo ' 6.out   '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out >[2=1]; grep lumen_dump /tmp/lumen.out'
+echo ' lumen -m '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out >[2=1]; grep lumen_dump /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 echo
 echo '--- 2) hidden fingerprints (-D pos vs hf_hidden_ref --pos): lumen_dbg lines ---'
-echo ' 6.out   '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out'
+echo ' lumen -m '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --pos '^$pos^' --dtype float16'
 echo ' L0: logits_h0, probs_h0 (attn bisect), preatn, attn; last line pre_logits vs final norm.'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref (end-to-end) ---'
-echo ' 6.out   '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'
+echo ' lumen -m '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo
 echo '--- 4) moving forward ---'
+echo ' Host-only HF commands: scripts/host_parity.sh — save outputs under baselines/ (see baselines/PARITY_HELLO2_POS1.txt).'
 echo ' Compare pre_logits sumsq/cksum (step 2) first; then greedy_id in lumen_hf (step 3).'
 echo ' ~1% drift on L0_logits_h0 F16 GGUF vs HF FP32 is common; fix large greedy gaps, not every cksum.'
 echo

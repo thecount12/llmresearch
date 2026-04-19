@@ -1,0 +1,22 @@
+Parity baseline checklist: hello2.tok (two ids: 14990 19482), debug position pos=1 (second token).
+Reference pair: GGUF Qwen2.5-0.5B-Instruct F16 + HF Qwen/Qwen2.5-0.5B-Instruct.
+
+Host (torch + transformers), from plan9/:
+
+  python3 hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok --pos 1 --dtype float16 2>hf_hidden.err | tee hf_hidden.out
+  python3 hf_logits_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok --dtype float16 2>hf_logits.err | tee hf_logits.out
+
+Plan 9 (after mk; binary is lumen, or ./lumen in plan9/):
+
+  lumen -m Qwen2.5-0.5B-Instruct-f16.gguf -P hello2.tok -n 0 -D 1 >/tmp/lumen_dbg.out >[2=1]
+  grep lumen_dbg /tmp/lumen_dbg.out
+
+  lumen -m Qwen2.5-0.5B-Instruct-f16.gguf -P hello2.tok -n 1 -F >/tmp/lumen_logits.out >[2=1]
+  grep lumen_hf /tmp/lumen_logits.out
+
+Embed row spot-check (token id 19482 = second line of hello2.tok):
+
+  lumen -m ... -Z 19482 -n 0 2>&1 | grep lumen_dump
+  python3 hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct --embed-row 19482 --dtype float16
+
+Archive hf_*.out and lumen_*.out when a milestone passes (Tier A: pre_logits cksum; Tier B: lumen_hf greedy match).

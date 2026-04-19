@@ -6,15 +6,21 @@
 #   run=1 rc l0parity.rc
 #   gguf=model.gguf tok=my.tok pos=1 run=1 rc l0parity.rc
 #
-# If you see no L0_ lines, check the printed 6.out status and the
-# first lines of merged output (often bad -m path or missing 6.out).
-# After changing transformer.c, run mk so 6.out includes L#_preatn.
+# Binary: mk installs lumen; this script tries ./lumen then ./6.out then lumen on $path.
+# If you see no L0_ lines, check exit status and merged output (bad -m path or missing binary).
+# After changing transformer.c, run mk so the binary includes L#_preatn.
 
 if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
 if(~ $#tok 0) tok=hello2.tok
 if(~ $#pos 0) pos=1
 if(~ $#run 0) run=0
 if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
+
+bin=./lumen
+if(! test -x $bin)
+	bin=./6.out
+if(! test -x $bin)
+	bin=lumen
 
 # Docs often write /sys/src/cmd/.../file.gguf; "..." is not a real path segment.
 if(~ $gguf */.../*)
@@ -35,14 +41,14 @@ if(~ $run 1) {
 	}
 	if(~ $skip 0) {
 		tmp=/tmp/l0parity.$pid.out
-		6.out -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
+		$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
 		ost=$status
 		grep 'lumen_dbg.*L0_' $tmp
 		gst=$status
 		# Null exit → empty $status; do not use $#var (empty status can
 		# still look like one empty word). ~ overwrites $status; use ost/gst.
 		if(~ $ost ?*)
-			echo '[l0parity] 6.out failed:' $ost
+			echo '[l0parity]' $bin 'failed:' $ost
 		if(~ $gst ?*) {
 			echo '[l0parity] no lumen_dbg L0_* lines; grep:' $gst
 			echo '[l0parity] first 16 merged lines:'
@@ -52,7 +58,7 @@ if(~ $run 1) {
 	}
 }
 if not
-	echo 'Dry run (no 6.out). Use: run=1 rc l0parity.rc'
+	echo 'Dry run (no lumen run). Use: run=1 rc l0parity.rc'
 
 echo
 echo '--- Host in plan9/: python3 hf_hidden_ref.py ... | grep L0_ ---'

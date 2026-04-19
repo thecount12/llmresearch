@@ -6,7 +6,7 @@ The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offset
 
 - **Metadata**: `general.architecture`, `general.alignment`, dimensions, vocab, context, etc.
 - **Architecture dispatch**: **`general.architecture`** containing **`qwen2`** selects **Qwen2** defaults (RMS ε **1e-6**, RoPE base **1e6**) when those keys are absent; values from the file override (suffixes **`.rope.freq_base`**, **`.attention.layer_norm_rms_epsilon`**, **`.attention.sliding_window`**).
-- **Qwen2 GGUF**: Same **`blk.*`** tensor names as Llama-class maps (plus optional **`rope_freqs.weight`**, ignored — RoPE is computed from **`rope.freq_base`**). **Sliding-window** attention uses a single global **`sliding_window`** from metadata (not per-layer patterns).
+- **Qwen2 GGUF**: Same **`blk.*`** tensor names as Llama-class maps (plus optional **`rope_freqs.weight`**, ignored — RoPE is computed from **`rope.freq_base`**). **Sliding-window**: Hugging Face dense instruct models often set **`use_sliding_window: false`** while still listing a numeric **`sliding_window`** in `config.json`. The loader treats **dense Qwen2** (architecture string contains `qwen2` but not `moe` / `MoE`) like HF: **effective window is off** unless GGUF metadata includes **`use_sliding_window`** set **true** (bool or 0/1 int). **Qwen2 MoE** and other variants keep the numeric **`.attention.sliding_window`** when present. Lumen does not implement per-layer **sliding_window_pattern** (HF `layer_types`); long-context parity for hybrid SWA models may require future work.
 - **GGML types**: F32, F16, Q4_0, Q8_0 (others fail with a clear error).
 - **Tokenizer**: `tokenizer.ggml.tokens` as an array of `GGUFString` (per-token UTF-8 strings).
 - **Tied embeddings**: if there is no separate output weight, copies `token_embd` into `wcls`.
@@ -15,7 +15,7 @@ The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offset
 
 - **`-m path`**: model file (`.gguf` or `.p9m` / `.bin` simple format).
 - **`-c N`**: **max context** (KV cache / attention length). Large GGUFs often advertise **seq_len 32k+**; allocating that on Plan 9 can OOM (`Killed: Insufficient physical memory`). **Default** (if **`-c`** omitted): cap to **4096** when metadata **seq_len > 4096**. **`-c 0`**: use the model’s full metadata **seq_len** (only if you have enough RAM). **`-c 2048`** etc. sets an explicit cap.
-- **`-v`**: stderr summary (loader kind, dims, vocab string count).
+- **`-v`**: stderr summary (loader kind, dims, **`embed_layout`**, RoPE / RMS / sliding_window, vocab string count). Cross-check **`embed_layout`**, **`rope_freq_base`**, **`rms_eps`**, head counts, and **`seq_len`** against the matching Hugging Face **`config.json`** when debugging parity.
 - **`-g`**: stderr top-8 logits each generation step (before sampling).
 - **`-s seed`**: seed the RNG used for **`-t`** sampling (`nrand` / `srand`); omit for default seeding.
 - **`-a`**: “pretty” token display: scans **each piece** and replaces **every** known HF/SentencePiece UTF-8 sequence with **ASCII** (`C4 A0` Ġ, `E2 96 81` ▁, `C2 A0` NBSP → space; `C4 8A` Ċ → newline). Other UTF-8 in the piece is passed through unchanged (may still look wrong on non-UTF-8 terminals).

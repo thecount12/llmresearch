@@ -5,9 +5,9 @@ Print the same lumen_hf fingerprint lines as lumen -F (pre-mask next-token logit
   python3 hf_logits_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
   # -p and -P are the same (token id file). -m is the HF repo id, not your .gguf path.
 
-Compare stderr from:
+Compare merged stdout+stderr from Plan 9 (rc: >file >[2=1]; mk installs lumen):
 
-  6.out -m model.gguf -P hello2.tok -n 0 -F 2>lumen.hf
+  lumen -m model.gguf -P hello2.tok -n 1 -F >/tmp/out >[2=1]; grep lumen_hf /tmp/out
 
 Requires: pip install torch transformers
 Use --dtype float16 to align better with F16 GGUF (default float32).
