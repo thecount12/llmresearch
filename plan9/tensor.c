@@ -87,7 +87,7 @@ softmax_f64norm(float *x, int n)
 			maxv = x[i];
 	sum = 0.0;
 	for(i = 0; i < n; i++){
-		x[i] = expf(x[i] - maxv);
+		x[i] = (float)exp((double)(x[i] - maxv));
 		sum += (double)x[i];
 	}
 	if(sum == 0.0)
