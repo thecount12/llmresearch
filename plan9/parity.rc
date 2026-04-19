@@ -1,21 +1,74 @@
 #!/bin/rc
-# HF vs lumen parity ladder (Qwen2.5 + GGUF). Run Python on a host with torch/transformers;
-# On Plan 9, mk (see mkfile) installs the binary as lumen in $home/bin/$objtype — not 6.out.
-# Substitute lumen for 6.out below if that is what you run. Merge stderr into stdout: >file >[2=1] (see rc(1))
+# HF vs lumen parity ladder (Qwen2.5 + GGUF).
+# Default: print commands only. To run lumen steps on Plan 9:  run=1 rc parity.rc
+# HF scripts run on a host with torch/transformers (copy the echoed python lines).
+# Merge stderr into stdout: >file >[2=1] (see rc(1))
 #
-# Set these or export before sourcing:
+# Set these before rc:
 #   gguf=Qwen2.5-0.5B-Instruct-f16.gguf
 #   hf='Qwen/Qwen2.5-0.5B-Instruct'
 #   tok=hello2.tok
 #   row=19482
 #   pos=1
+#   run=1   (optional: execute lumen; default 0 = instructions only)
 
 if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
 if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
 if(~ $#tok 0) tok=hello2.tok
 if(~ $#row 0) row=19482
 if(~ $#pos 0) pos=1
+if(~ $#run 0) run=0
 
+bin=./lumen
+if(! test -x $bin)
+	bin=./6.out
+if(! test -x $bin)
+	bin=lumen
+
+if(~ $run 1) {
+	tmp=/tmp/parity.$pid.out
+	skip=0
+	if(! test -r $gguf) {
+		echo '[parity] cannot read '^$gguf
+		skip=1
+	}
+	if(! test -r $tok) {
+		echo '[parity] cannot read '^$tok^' (try hello2.tok in cwd)'
+		skip=1
+	}
+	if(~ $skip 0) {
+		echo '--- 1) lumen embed row '^$row^' ---'
+		$bin -m $gguf -Z $row -n 0 >$tmp >[2=1]
+		if(~ $status ?*)
+			echo '[parity] step 1 failed:' $status
+		if not
+			grep lumen_dump $tmp
+
+		echo
+		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
+		$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
+		if(~ $status ?*)
+			echo '[parity] step 2 failed:' $status
+		if not
+			grep lumen_dbg $tmp
+
+		echo
+		echo '--- 3) lumen -F (next-token logits) ---'
+		$bin -m $gguf -P $tok -n 1 -F >$tmp >[2=1]
+		if(~ $status ?*)
+			echo '[parity] step 3 failed:' $status
+		if not
+			grep lumen_hf $tmp
+		rm -f $tmp
+	}
+	echo
+	echo '--- Host: run these next to compare ---'
+	echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
+	echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --pos '^$pos^' --dtype float16'
+	echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
+	echo
+}
+if not {
 echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
 echo ' lumen -m '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out >[2=1]; grep lumen_dump /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
@@ -30,9 +83,11 @@ echo ' lumen -m '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo
 echo '--- 4) moving forward ---'
-echo ' Host-only HF commands: scripts/host_parity.sh — save outputs under baselines/ (see baselines/PARITY_HELLO2_POS1.txt).'
+echo ' Run lumen automatically:  run=1 rc parity.rc'
+echo ' Host-only HF:  scripts/host_parity.sh — save outputs under baselines/ (see baselines/PARITY_HELLO2_POS1.txt).'
 echo ' Compare pre_logits sumsq/cksum (step 2) first; then greedy_id in lumen_hf (step 3).'
 echo ' ~1% drift on L0_logits_h0 F16 GGUF vs HF FP32 is common; fix large greedy gaps, not every cksum.'
 echo
 echo 'Bisect: embed ok but later wrong — layer -D; L0_preatn vs HF — MHA vs wo; parity.rc step 3 — full graph.'
 echo 'GGUF embed_layout from token_embd ne[].'
+}
