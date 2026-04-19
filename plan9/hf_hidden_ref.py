@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L0_probs_h0, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
+Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L0_logits_h0, L0_probs_h0, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -126,6 +126,36 @@ def qwen2_qk_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos):
         .numpy()
     )
     return qf, kf
+
+
+def qwen2_l0_head0_logits(base, h_in, cos, sin, line_pos, sliding_window: int):
+    """Pre-softmax Q·K/sqrt(d) for layer 0 head 0, keys t_start..t_start+natt-1 (matches lumen)."""
+    import math
+
+    import torch
+
+    attn = base.layers[0].self_attn
+    h_norm = base.layers[0].input_layernorm(h_in)
+    b, tlen, _ = h_norm.shape
+    hd = attn.head_dim
+    nh = attn.config.num_attention_heads
+    nkv = attn.config.num_key_value_heads
+    inv_scale = 1.0 / math.sqrt(float(hd))
+    q = attn.q_proj(h_norm).view(b, tlen, nh, hd).transpose(1, 2)
+    k = attn.k_proj(h_norm).view(b, tlen, nkv, hd).transpose(1, 2)
+    q, k = _hf_apply_rotary_pos_emb(q, k, cos, sin)
+    t_start = 0
+    if sliding_window > 0:
+        t_start = line_pos + 1 - sliding_window
+        if t_start < 0:
+            t_start = 0
+    natt = line_pos + 1 - t_start
+    out = []
+    for ti in range(natt):
+        tt = t_start + ti
+        s = (q[0, 0, line_pos] * k[0, 0, tt]).sum() * inv_scale
+        out.append(s)
+    return torch.stack(out).detach().float().cpu().numpy()
 
 
 def arch_label(model) -> str:
@@ -307,6 +337,12 @@ def main() -> None:
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
+                if l == 0:
+                    sw = int(getattr(model.config, "sliding_window", 0) or 0)
+                    lg = qwen2_l0_head0_logits(
+                        base, hs[l], cos, sin, line_pos, sw
+                    )
+                    print(vec_fp_line(arch, line_pos, "L0_logits_h0", lg))
             if (
                 l == 0
                 and attns is not None
@@ -356,6 +392,12 @@ def main() -> None:
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
+                if l == 0:
+                    sw = int(getattr(model.config, "sliding_window", 0) or 0)
+                    lg = qwen2_l0_head0_logits(
+                        base, h_in, cos, sin, line_pos, sw
+                    )
+                    print(vec_fp_line(arch, line_pos, "L0_logits_h0", lg))
             if (
                 l == 0
                 and attns is not None

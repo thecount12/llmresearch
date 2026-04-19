@@ -20,7 +20,7 @@ if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
 if(~ $gguf */.../*)
 	echo '[l0parity] gguf contains /.../ — replace with your real directories (ellipsis is not valid in paths).'
 
-echo '--- Plan 9: L0_norm L0_rope L0_krope L0_probs_h0 L0_preatn L0_attn ---'
+echo '--- Plan 9: L0_norm L0_rope L0_krope L0_logits_h0 L0_probs_h0 L0_preatn L0_attn ---'
 if(~ $run 1) {
 	skip=0
 	if(! test -r $gguf) {

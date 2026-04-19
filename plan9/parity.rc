@@ -22,7 +22,7 @@ echo
 echo '--- 2) hidden fingerprints (embed, L#_norm, L#_rope, L#_krope, L#_preatn, L#_attn, L#, pre_logits): lumen -D vs hf_hidden_ref -p ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
-echo ' L0_probs_h0: post-softmax weights head0 keys 0..pos. L0_preatn: after softmax@V before o_proj (MHA vs wo).'
+echo ' L0_logits_h0: pre-softmax Q·K/√d head0. L0_probs_h0: post-softmax. Then L0_preatn (MHA vs wo).'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref ---'
 echo ' 6.out   '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'
