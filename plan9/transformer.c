@@ -127,14 +127,20 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 				s->att[h * cfg->seq_len + t] = score;
 			}
 			if(l == 0 && h == 0 && dbg != nil && dbg->enabled &&
-			   (dbg->pos_filter < 0 || pos == dbg->pos_filter))
+			   (dbg->pos_filter < 0 || pos == dbg->pos_filter)){
 				forward_debug_emit(dbg, cfg, pos, "L0_logits_h0",
 					s->att + h * cfg->seq_len + t_start, natt);
+				vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_h0_logits",
+					s->att + h * cfg->seq_len + t_start, natt);
+			}
 			softmax_f64norm(s->att + h * cfg->seq_len + t_start, natt);
 			if(l == 0 && h == 0 && dbg != nil && dbg->enabled &&
-			   (dbg->pos_filter < 0 || pos == dbg->pos_filter))
+			   (dbg->pos_filter < 0 || pos == dbg->pos_filter)){
 				forward_debug_emit(dbg, cfg, pos, "L0_probs_h0",
 					s->att + h * cfg->seq_len + t_start, natt);
+				vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_h0_probs",
+					s->att + h * cfg->seq_len + t_start, natt);
+			}
 
 			for(i = 0; i < head_dim; i++){
 				dscore = 0.0;
@@ -150,6 +156,13 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 
 		snprint(kbuf, sizeof kbuf, "L%d_preatn", l);
 		forward_debug_emit(dbg, cfg, pos, kbuf, s->xb2, dim);
+		if(l == 0 && dbg != nil && dbg->enabled &&
+		   (dbg->pos_filter < 0 || pos == dbg->pos_filter)){
+			int npre;
+
+			npre = dim < 16 ? dim : 16;
+			vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_preatn_first16", s->xb2, npre);
+		}
 
 		matvec(s->xb, lw->wo, s->xb2, dim, dim);
 		accum(s->x, s->xb, dim);

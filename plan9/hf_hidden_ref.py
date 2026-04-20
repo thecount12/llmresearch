@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L0_logits_h0, L0_probs_h0, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
+Also prints lumen_dbg_raw lines (L0_h0 logits/probs floats, first 16 of L0 preatn) for side-by-side diff with Plan 9 lumen -D.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -78,6 +79,23 @@ def vec_fp_line(arch: str, pos: int, kind: str, vec) -> str:
         f"lumen_dbg: arch={arch} pos={pos} kind={kind} dim={n} "
         f"sumsq={sumsq:.18g} cksum={cksum:x}x"
     )
+
+
+def print_dbg_raw(
+    arch: str, pos: int, kind: str, vec, max_n: int | None = None
+) -> None:
+    """Same layout as lumen vec_dump_raw (stderr grep lumen_dbg catches these)."""
+    import numpy as np
+
+    xf = np.asarray(vec, dtype=np.float32).reshape(-1)
+    n = int(xf.shape[0])
+    if max_n is not None:
+        n = min(n, int(max_n))
+    parts = [
+        f"lumen_dbg_raw: arch={arch} pos={pos} kind={kind} n={n}",
+        *[f"{float(xf[i]):.9g}" for i in range(n)],
+    ]
+    print(" ".join(parts))
 
 
 def _hf_rotate_half(x):
@@ -364,6 +382,7 @@ def main() -> None:
                         base, hs[l], cos, sin, line_pos, sw
                     )
                     print(vec_fp_line(arch, line_pos, "L0_logits_h0", lg))
+                    print_dbg_raw(arch, line_pos, "L0_h0_logits", lg)
             if (
                 l == 0
                 and attns is not None
@@ -378,6 +397,7 @@ def main() -> None:
                     .numpy()
                 )
                 print(vec_fp_line(arch, line_pos, "L0_probs_h0", probs))
+                print_dbg_raw(arch, line_pos, "L0_h0_probs", probs)
             if l in pre_attn_outs:
                 pa = (
                     pre_attn_outs[l][0, line_pos]
@@ -387,6 +407,8 @@ def main() -> None:
                     .numpy()
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_preatn", pa))
+                if l == 0:
+                    print_dbg_raw(arch, line_pos, "L0_preatn_first16", pa, 16)
             inp_l = hs[l][0, line_pos].detach().float().cpu().numpy()
             ao = attn_outs[l][0, line_pos].detach().float().cpu().numpy()
             print(vec_fp_line(arch, line_pos, f"L{l}_attn", inp_l + ao))
@@ -427,6 +449,7 @@ def main() -> None:
                         base, h_in, cos, sin, line_pos, sw
                     )
                     print(vec_fp_line(arch, line_pos, "L0_logits_h0", lg))
+                    print_dbg_raw(arch, line_pos, "L0_h0_logits", lg)
             if (
                 l == 0
                 and attns is not None
@@ -441,6 +464,7 @@ def main() -> None:
                     .numpy()
                 )
                 print(vec_fp_line(arch, line_pos, "L0_probs_h0", probs))
+                print_dbg_raw(arch, line_pos, "L0_h0_probs", probs)
             if l in pre_attn_outs:
                 pa = (
                     pre_attn_outs[l][0, line_pos]
@@ -450,6 +474,8 @@ def main() -> None:
                     .numpy()
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_preatn", pa))
+                if l == 0:
+                    print_dbg_raw(arch, line_pos, "L0_preatn_first16", pa, 16)
             inp_l = (
                 evec
                 if l == 0

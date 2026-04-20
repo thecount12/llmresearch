@@ -54,7 +54,7 @@ usage(void)
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
 	fprint(2, "       -e  print each greedy token id (and piece string) to stderr for comparison with HF/llama.cpp\n");
 	fprint(2, "       -F  after prompt: print pre-mask logits fingerprint (greedy, sumsq, cksum, top-5) on stderr; use hf_logits_ref.py on host\n");
-	fprint(2, "       -D  forward trace: stderr lumen_dbg: embed, L#_norm, L#_rope, L#_krope, L0_logits_h0, L0_probs_h0, L#_preatn, L#_attn, L#, pre_logits (sumsq/cksum); arg is pos or \"all\"\n");
+	fprint(2, "       -D  forward trace: stderr lumen_dbg (+ lumen_dbg_raw L0 logits/probs/preatn floats); arg is pos or \"all\"\n");
 	fprint(2, "            compare to hf_hidden_ref.py on host; use e.g. -D 1 for last prompt tok of a 2-token -P file\n");
 	fprint(2, "       -Z  dump first 16 floats of embedding row for token id (stderr); compare hf_hidden_ref.py --embed-row\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");

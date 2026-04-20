@@ -76,7 +76,7 @@ echo
 echo '--- 2) hidden fingerprints (-D pos vs hf_hidden_ref --pos): lumen_dbg lines ---'
 echo ' lumen -m '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --pos '^$pos^' --dtype float16'
-echo ' L0: logits_h0, probs_h0 (attn bisect), preatn, attn; last line pre_logits vs final norm.'
+echo ' L0: logits_h0, probs_h0 (attn bisect), preatn, attn; lumen_dbg_raw = float diff; last line pre_logits.'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref (end-to-end) ---'
 echo ' lumen -m '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'

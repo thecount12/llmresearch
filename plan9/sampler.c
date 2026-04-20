@@ -142,6 +142,22 @@ vec_fingerprint(int fd, const char *arch, int pos, const char *kind, float *v, i
 }
 
 /*
+ * Human-readable float dump for diffing against hf_hidden_ref.py (same prefix grep as lumen_dbg).
+ */
+void
+vec_dump_raw(int fd, const char *arch, int pos, const char *kind, float *v, int n)
+{
+	int i;
+
+	if(v == nil || n <= 0 || arch == nil || kind == nil)
+		return;
+	fprint(fd, "lumen_dbg_raw: arch=%s pos=%d kind=%s n=%d", arch, pos, kind, n);
+	for(i = 0; i < n; i++)
+		fprint(fd, " %.9g", (double)v[i]);
+	fprint(fd, "\n");
+}
+
+/*
  * One stderr block for comparing pre-mask next-token logits to HF (hf_logits_ref.py).
  * sumsq = sum(logits[i]^2); cksum = 64-bit mix of float bits and index (not cryptographic).
  */

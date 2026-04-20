@@ -43,7 +43,8 @@ if(~ $run 1) {
 		tmp=/tmp/l0parity.$pid.out
 		$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
 		ost=$status
-		grep 'lumen_dbg.*L0_' $tmp
+		grep 'lumen_dbg: arch=.* kind=L0_' $tmp
+		grep 'lumen_dbg_raw:' $tmp
 		gst=$status
 		# Null exit → empty $status; do not use $#var (empty status can
 		# still look like one empty word). ~ overwrites $status; use ost/gst.

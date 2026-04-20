@@ -140,6 +140,7 @@ void sampler_seed(ulong seed);
 void dump_logits_topk(int fd, float *logits, int n, int k);
 void hf_logits_fingerprint(int fd, float *logits, int n);
 void vec_fingerprint(int fd, const char *arch, int pos, const char *kind, float *v, int n);
+void vec_dump_raw(int fd, const char *arch, int pos, const char *kind, float *v, int n);
 void decode_logits_mask(Model *m, float *logits);
 
 int transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int nerr, ForwardDebug *dbg);
