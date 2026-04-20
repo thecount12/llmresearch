@@ -1101,6 +1101,14 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 	if(strstr(gi.architecture, "qwen2") != nil || strstr(gi.architecture, "Qwen2") != nil){
 		cfg.arch = ArchQwen2;
 		cfg.rope_type = RopeNeox;
+		/*
+		 * HF Qwen2 / Qwen2.5 defaults when metadata omits keys (see gguf-notes.md).
+		 * Without .rope.freq_base, tensor.c would fall back to 1e4 — wrong for these models.
+		 */
+		if(cfg.rope_freq_base <= 0.0f)
+			cfg.rope_freq_base = 1000000.0f;
+		if(cfg.rms_eps <= 0.0f)
+			cfg.rms_eps = 1e-6f;
 	}else{
 		cfg.rope_type = RopeNormal;
 	}
