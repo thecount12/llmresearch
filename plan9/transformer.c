@@ -102,6 +102,18 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		vec_copy(kcache, s->k, kdim);
 		vec_copy(vcache, s->v, kdim);
 
+		if(l == 0 && dbg != nil && dbg->enabled && pos >= 1 &&
+		   (dbg->pos_filter < 0 || pos == dbg->pos_filter)){
+			float *k0 = s->cache.k + (l * cfg->seq_len + 0) * kdim;
+
+			vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_k_kv0_t0_h",
+				k0, head_dim);
+			vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_k_kv0_tpos_h",
+				s->cache.k + (l * cfg->seq_len + pos) * kdim, head_dim);
+			vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_q_h0_tpos",
+				s->q, head_dim);
+		}
+
 		vec_zero(s->xb2, dim);
 		inv_scale = 1.0f / sqrt((float)head_dim);
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L0_logits_h0, L0_probs_h0, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
-Also prints lumen_dbg_raw lines (L0_h0 logits/probs floats, first 16 of L0 preatn) for side-by-side diff with Plan 9 lumen -D.
+Also prints lumen_dbg_raw lines: L0_h0 logits/probs, L0_q_h0_tpos / L0_k_kv0_t0_h / L0_k_kv0_tpos_h (64 floats each when pos>=1),
+and first 16 of L0 preatn — for side-by-side diff with Plan 9 lumen -D.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
 
@@ -144,6 +145,31 @@ def qwen2_qk_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos):
         .numpy()
     )
     return qf, kf
+
+
+def qwen2_l0_qk_kv0_probe(
+    base, h_in, cos, sin, line_pos: int, arch: str, head_dim: int
+) -> None:
+    """Q head 0 and K kv head 0 after RoPE at t=0 and t=line_pos (bisect L0_h0 logits)."""
+    import torch
+
+    if line_pos < 1:
+        return
+    attn = base.layers[0].self_attn
+    h_norm = base.layers[0].input_layernorm(h_in)
+    b, tlen, _ = h_norm.shape
+    hd = attn.head_dim
+    nh = attn.config.num_attention_heads
+    nkv = attn.config.num_key_value_heads
+    q = attn.q_proj(h_norm).view(b, tlen, nh, hd).transpose(1, 2)
+    k = attn.k_proj(h_norm).view(b, tlen, nkv, hd).transpose(1, 2)
+    q, k = _hf_apply_rotary_pos_emb(q, k, cos, sin)
+    qh = q[0, 0, line_pos].detach().float().cpu().numpy()
+    k0 = k[0, 0, 0].detach().float().cpu().numpy()
+    kpos = k[0, 0, line_pos].detach().float().cpu().numpy()
+    print_dbg_raw(arch, line_pos, "L0_q_h0_tpos", qh, head_dim)
+    print_dbg_raw(arch, line_pos, "L0_k_kv0_t0_h", k0, head_dim)
+    print_dbg_raw(arch, line_pos, "L0_k_kv0_tpos_h", kpos, head_dim)
 
 
 def qwen2_l0_head0_logits(base, h_in, cos, sin, line_pos, sliding_window: int):
@@ -378,6 +404,10 @@ def main() -> None:
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
                 if l == 0:
                     sw = effective_attn_sliding_window(model.config)
+                    hd0 = base.layers[0].self_attn.head_dim
+                    qwen2_l0_qk_kv0_probe(
+                        base, hs[l], cos, sin, line_pos, arch, hd0
+                    )
                     lg = qwen2_l0_head0_logits(
                         base, hs[l], cos, sin, line_pos, sw
                     )
@@ -445,6 +475,10 @@ def main() -> None:
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
                 if l == 0:
                     sw = effective_attn_sliding_window(model.config)
+                    hd0 = base.layers[0].self_attn.head_dim
+                    qwen2_l0_qk_kv0_probe(
+                        base, h_in, cos, sin, line_pos, arch, hd0
+                    )
                     lg = qwen2_l0_head0_logits(
                         base, h_in, cos, sin, line_pos, sw
                     )
