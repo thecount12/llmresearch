@@ -100,28 +100,31 @@ void
 rmsnorm(float *out, float *x, float *weight, int n, float eps)
 {
 	int i;
-	float ss, scalev;
+	double ss, scalev;
 
-	ss = 0.0f;
+	/* HF Qwen2RMSNorm: variance in float32; double here matches that better than float acc. */
+	ss = 0.0;
+	for(i = 0; i < n; i++){
+		double t = (double)x[i];
+		ss += t * t;
+	}
+	ss /= (double)n;
+	scalev = 1.0 / sqrt(ss + (double)eps);
 	for(i = 0; i < n; i++)
-		ss += x[i] * x[i];
-	ss /= n;
-	scalev = 1.0f / sqrt(ss + eps);
-	for(i = 0; i < n; i++)
-		out[i] = weight[i] * (x[i] * scalev);
+		out[i] = (float)((double)weight[i] * (double)x[i] * scalev);
 }
 
 void
 matvec(float *out, float *w, float *x, int nout, int nin)
 {
 	int i, j;
-	float sum;
+	double sum;
 
 	for(i = 0; i < nout; i++){
-		sum = 0.0f;
+		sum = 0.0;
 		for(j = 0; j < nin; j++)
-			sum += w[i * nin + j] * x[j];
-		out[i] = sum;
+			sum += (double)w[i * nin + j] * (double)x[j];
+		out[i] = (float)sum;
 	}
 }
 
@@ -155,22 +158,22 @@ void
 matvec_logits_gguf(float *out, float *w, float *x, int dim, int vocab, int embed_layout)
 {
 	int v, d;
-	float sum;
+	double sum;
 
 	if(embed_layout == 1){
 		for(v = 0; v < vocab; v++){
-			sum = 0.0f;
+			sum = 0.0;
 			for(d = 0; d < dim; d++)
-				sum += w[v * dim + d] * x[d];
-			out[v] = sum;
+				sum += (double)w[v * dim + d] * (double)x[d];
+			out[v] = (float)sum;
 		}
 		return;
 	}
 	for(v = 0; v < vocab; v++){
-		sum = 0.0f;
+		sum = 0.0;
 		for(d = 0; d < dim; d++)
-			sum += w[d * vocab + v] * x[d];
-		out[v] = sum;
+			sum += (double)w[d * vocab + v] * (double)x[d];
+		out[v] = (float)sum;
 	}
 }
 
@@ -183,13 +186,13 @@ void
 matvec_k_proj_gguf(float *out, float *w, float *x, int kdim, int dim)
 {
 	int i, r;
-	float sum;
+	double sum;
 
 	for(i = 0; i < kdim; i++){
-		sum = 0.0f;
+		sum = 0.0;
 		for(r = 0; r < dim; r++)
-			sum += w[r * kdim + i] * x[r];
-		out[i] = sum;
+			sum += (double)w[r * kdim + i] * (double)x[r];
+		out[i] = (float)sum;
 	}
 }
 
@@ -200,13 +203,13 @@ void
 matvec_gate_up_gguf(float *out, float *w, float *x, int hidden, int dim)
 {
 	int h, r;
-	float sum;
+	double sum;
 
 	for(h = 0; h < hidden; h++){
-		sum = 0.0f;
+		sum = 0.0;
 		for(r = 0; r < dim; r++)
-			sum += w[r * hidden + h] * x[r];
-		out[h] = sum;
+			sum += (double)w[r * hidden + h] * (double)x[r];
+		out[h] = (float)sum;
 	}
 }
 
@@ -217,13 +220,13 @@ void
 matvec_ffn_down_gguf(float *out, float *w, float *x, int dim, int hidden)
 {
 	int d, h;
-	float sum;
+	double sum;
 
 	for(d = 0; d < dim; d++){
-		sum = 0.0f;
+		sum = 0.0;
 		for(h = 0; h < hidden; h++)
-			sum += w[h * dim + d] * x[h];
-		out[d] = sum;
+			sum += (double)w[h * dim + d] * (double)x[h];
+		out[d] = (float)sum;
 	}
 }
 
