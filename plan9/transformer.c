@@ -91,6 +91,18 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 			accum(s->k, lw->bk, kdim);
 			accum(s->v, lw->bv, kdim);
 		}
+		if(l == 0 && pos == 0 && s->kpre0_l0 != nil)
+			vec_copy(s->kpre0_l0, s->k, kdim);
+		if(l == 0 && dbg != nil && dbg->enabled && pos >= 1 &&
+		   (dbg->pos_filter < 0 || pos == dbg->pos_filter)){
+			if(s->kpre0_l0 != nil)
+				vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_kpre_kv0_t0_h",
+					s->kpre0_l0, head_dim);
+			vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_kpre_kv0_tpos_h",
+				s->k, head_dim);
+			vec_dump_raw(dbg->fd, arch_str(cfg), pos, "L0_qpre_h0_tpos",
+				s->q, head_dim);
+		}
 		rope_apply(s->q, s->k, pos, cfg);
 		snprint(kbuf, sizeof kbuf, "L%d_rope", l);
 		forward_debug_emit(dbg, cfg, pos, kbuf, s->q, dim);

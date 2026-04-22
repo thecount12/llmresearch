@@ -199,10 +199,12 @@ alloc_run_state(RunState *s, Config *cfg, char *err, int nerr)
 	s->logits = xalloc(cfg->vocab_size * sizeof(float), err, nerr);
 	s->cache.k = xalloc(layers * seq * kdim * sizeof(float), err, nerr);
 	s->cache.v = xalloc(layers * seq * kdim * sizeof(float), err, nerr);
+	s->kpre0_l0 = xalloc(kdim * sizeof(float), err, nerr);
 
 	if(s->x == nil || s->xb == nil || s->xb2 == nil || s->hb == nil ||
 	   s->hb2 == nil || s->q == nil || s->k == nil || s->v == nil ||
-	   s->att == nil || s->logits == nil || s->cache.k == nil || s->cache.v == nil){
+	   s->att == nil || s->logits == nil || s->cache.k == nil || s->cache.v == nil ||
+	   s->kpre0_l0 == nil){
 		free_run_state(s);
 		return -1;
 	}
@@ -226,14 +228,20 @@ free_run_state(RunState *s)
 	free(s->logits);
 	free(s->cache.k);
 	free(s->cache.v);
+	free(s->kpre0_l0);
 	memset(s, 0, sizeof(*s));
 }
 
 void
 clear_kv_cache(RunState *s, Config *cfg)
 {
-	memset(s->cache.k, 0, cfg->n_layers * cfg->seq_len * kv_dim(cfg) * sizeof(float));
-	memset(s->cache.v, 0, cfg->n_layers * cfg->seq_len * kv_dim(cfg) * sizeof(float));
+	int kdim;
+
+	kdim = kv_dim(cfg);
+	memset(s->cache.k, 0, cfg->n_layers * cfg->seq_len * kdim * sizeof(float));
+	memset(s->cache.v, 0, cfg->n_layers * cfg->seq_len * kdim * sizeof(float));
+	if(s->kpre0_l0 != nil)
+		memset(s->kpre0_l0, 0, kdim * sizeof(float));
 }
 
 static void

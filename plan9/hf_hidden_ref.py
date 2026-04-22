@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Print lumen_dbg lines matching lumen -D (embed, L#_norm, L#_rope, L#_krope, L0_logits_h0, L0_probs_h0, L#_preatn, L#_attn, L#, pre_logits) for the last prompt position.
-Also prints lumen_dbg_raw lines: L0_h0 logits/probs, L0_q_h0_tpos / L0_k_kv0_t0_h / L0_k_kv0_tpos_h (64 floats each when pos>=1),
+Also prints lumen_dbg_raw lines: L0_kpre_* / L0_qpre_* (before RoPE), L0_q_h0_tpos / L0_k_kv0_* (after RoPE), L0_h0 logits/probs (64 floats / 2 when pos>=1),
 and first 16 of L0 preatn — for side-by-side diff with Plan 9 lumen -D.
 
   python hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
@@ -225,6 +225,27 @@ def qwen2_l0_qk_kv0_probe(
     nkv = attn.config.num_key_value_heads
     q = attn.q_proj(h_norm).view(b, tlen, nh, hd).transpose(1, 2)
     k = attn.k_proj(h_norm).view(b, tlen, nkv, hd).transpose(1, 2)
+    print_dbg_raw(
+        arch,
+        line_pos,
+        "L0_kpre_kv0_t0_h",
+        k[0, 0, 0].detach().float().cpu().numpy(),
+        head_dim,
+    )
+    print_dbg_raw(
+        arch,
+        line_pos,
+        "L0_kpre_kv0_tpos_h",
+        k[0, 0, line_pos].detach().float().cpu().numpy(),
+        head_dim,
+    )
+    print_dbg_raw(
+        arch,
+        line_pos,
+        "L0_qpre_h0_tpos",
+        q[0, 0, line_pos].detach().float().cpu().numpy(),
+        head_dim,
+    )
     q, k = _qwen2_apply_rotary_pos_emb(q, k, cos, sin, position_ids)
     qh = q[0, 0, line_pos].detach().float().cpu().numpy()
     k0 = k[0, 0, 0].detach().float().cpu().numpy()

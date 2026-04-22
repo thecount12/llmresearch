@@ -91,6 +91,7 @@ struct RunState {
 	float *att;
 	float *logits;
 	KVCache cache;
+	float *kpre0_l0;	/* L0 K after k_proj+bias, before RoPE, snapshot at pos==0 (kdim); for -D bisect */
 };
 
 /*
