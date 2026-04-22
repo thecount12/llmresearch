@@ -1156,6 +1156,22 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		return -1;
 	}
 
+	/*
+	 * HF Qwen2 dense uses biases on q/k/v; missing GGUF tensors leave mallocz zeros and break K parity first.
+	 */
+	if((strstr(gi.architecture, "qwen2") != nil || strstr(gi.architecture, "Qwen2") != nil)
+	    && strstr(gi.architecture, "moe") == nil && strstr(gi.architecture, "MoE") == nil){
+		if((ulong)gm.attn_k_bias < gi.n_layers)
+			fprint(2, "lumen: warning: gguf attn_k.bias count=%d < layers=%llud (HF expects bias; K cache will be wrong if tensors are absent)\n",
+				gm.attn_k_bias, gi.n_layers);
+		if((ulong)gm.attn_q_bias < gi.n_layers)
+			fprint(2, "lumen: warning: gguf attn_q.bias count=%d < layers=%llud\n",
+				gm.attn_q_bias, gi.n_layers);
+		if((ulong)gm.attn_v_bias < gi.n_layers)
+			fprint(2, "lumen: warning: gguf attn_v.bias count=%d < layers=%llud\n",
+				gm.attn_v_bias, gi.n_layers);
+	}
+
 	if(gm.unsupported > 0){
 		snprint(err, nerr,
 			"gguf mapped: arch=%s version=%lud tensors=%llud layers=%llud dim=%llud heads=%llud kv_heads=%llud vocab=%llud ctx=%llud tied_output=%d; unsupported ggml tensor type=%lud tensor=%s",

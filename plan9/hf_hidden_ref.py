@@ -108,16 +108,80 @@ def _hf_rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def _hf_apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim: int = 1):
-    """Eager RoPE used by Qwen2 (avoids importing modeling_qwen2, which can fail on some installs)."""
-    cos = cos.unsqueeze(unsqueeze_dim)
-    sin = sin.unsqueeze(unsqueeze_dim)
+def _hf_apply_rotary_pos_emb_legacy(q, k, cos, sin, position_ids, unsqueeze_dim: int = 1):
+    """Transformers <=4.4x: cos/sin are [seq, head_dim]; index with position_ids then broadcast to [B,H,T,D]."""
+    if cos.ndim == 3 and cos.shape[0] == 1:
+        cos = cos.squeeze(0)
+        sin = sin.squeeze(0)
+    cos = cos[position_ids].unsqueeze(unsqueeze_dim)
+    sin = sin[position_ids].unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (_hf_rotate_half(q) * sin)
     k_embed = (k * cos) + (_hf_rotate_half(k) * sin)
     return q_embed, k_embed
 
 
-def qwen2_qk_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos):
+def _qwen2_apply_rotary_pos_emb(q, k, cos, sin, position_ids):
+    """Dispatch to installed transformers Qwen2 apply_rotary_pos_emb (API differs by version)."""
+    import inspect
+
+    try:
+        from transformers.models.qwen2.modeling_qwen2 import (
+            apply_rotary_pos_emb as tf_apply_rope,
+        )
+    except ImportError:
+        tf_apply_rope = None
+    if tf_apply_rope is not None:
+        sig = inspect.signature(tf_apply_rope)
+        if "position_ids" in sig.parameters:
+            return tf_apply_rope(q, k, cos, sin, position_ids)
+        return tf_apply_rope(q, k, cos, sin)
+    return _hf_apply_rotary_pos_emb_legacy(q, k, cos, sin, position_ids)
+
+
+def qwen2_get_rotary_cos_sin(base, h_in_layer0, position_ids):
+    """
+    Match HF: model-level rotary_emb(hidden, position_ids) when present, else layer0 rotary_emb(value_states, seq_len=...).
+    h_in_layer0: [B,T,hidden] input to layer 0 (embedding stream).
+    """
+    import inspect
+
+    attn0 = base.layers[0].self_attn
+    b, t, _ = h_in_layer0.shape
+    hd = attn0.head_dim
+    nkv = attn0.config.num_key_value_heads
+    h_norm = base.layers[0].input_layernorm(h_in_layer0)
+    vs = attn0.v_proj(h_norm).view(b, t, nkv, hd).transpose(1, 2)
+
+    model_rope = getattr(base, "rotary_emb", None)
+    if model_rope is not None:
+        try:
+            sig = inspect.signature(model_rope.forward)
+            if "position_ids" in sig.parameters:
+                out = model_rope(h_in_layer0, position_ids)
+                if isinstance(out, (tuple, list)) and len(out) == 2:
+                    return out[0], out[1]
+        except TypeError:
+            pass
+
+    layer_rope = getattr(attn0, "rotary_emb", None)
+    if layer_rope is None:
+        raise RuntimeError(
+            "hf_hidden_ref: Qwen2 has no rotary_emb on model or layer 0 attention"
+        )
+    sig = inspect.signature(layer_rope.forward)
+    if "seq_len" in sig.parameters:
+        return layer_rope(vs, seq_len=t)
+    if "position_ids" in sig.parameters:
+        out = layer_rope(h_in_layer0, position_ids)
+        if isinstance(out, (tuple, list)) and len(out) == 2:
+            return out[0], out[1]
+    out = layer_rope(vs)
+    if isinstance(out, (tuple, list)) and len(out) == 2:
+        return out[0], out[1]
+    raise RuntimeError("hf_hidden_ref: unexpected rotary_emb return type")
+
+
+def qwen2_qk_flat_after_rope(base, layer_idx, h_in, cos, sin, position_ids, line_pos):
     """Q and K after RoPE at line_pos — same layout as lumen L%d_rope / L%d_krope."""
     attn = base.layers[layer_idx].self_attn
     h_norm = base.layers[layer_idx].input_layernorm(h_in)
@@ -127,7 +191,7 @@ def qwen2_qk_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos):
     nkv = attn.config.num_key_value_heads
     q = attn.q_proj(h_norm).view(b, t, nh, hd).transpose(1, 2)
     k = attn.k_proj(h_norm).view(b, t, nkv, hd).transpose(1, 2)
-    q, k = _hf_apply_rotary_pos_emb(q, k, cos, sin)
+    q, k = _qwen2_apply_rotary_pos_emb(q, k, cos, sin, position_ids)
     qf = (
         q[0, :, line_pos, :]
         .detach()
@@ -148,11 +212,9 @@ def qwen2_qk_flat_after_rope(base, layer_idx, h_in, cos, sin, line_pos):
 
 
 def qwen2_l0_qk_kv0_probe(
-    base, h_in, cos, sin, line_pos: int, arch: str, head_dim: int
+    base, h_in, cos, sin, position_ids, line_pos: int, arch: str, head_dim: int
 ) -> None:
     """Q head 0 and K kv head 0 after RoPE at t=0 and t=line_pos (bisect L0_h0 logits)."""
-    import torch
-
     if line_pos < 1:
         return
     attn = base.layers[0].self_attn
@@ -163,7 +225,7 @@ def qwen2_l0_qk_kv0_probe(
     nkv = attn.config.num_key_value_heads
     q = attn.q_proj(h_norm).view(b, tlen, nh, hd).transpose(1, 2)
     k = attn.k_proj(h_norm).view(b, tlen, nkv, hd).transpose(1, 2)
-    q, k = _hf_apply_rotary_pos_emb(q, k, cos, sin)
+    q, k = _qwen2_apply_rotary_pos_emb(q, k, cos, sin, position_ids)
     qh = q[0, 0, line_pos].detach().float().cpu().numpy()
     k0 = k[0, 0, 0].detach().float().cpu().numpy()
     kpos = k[0, 0, line_pos].detach().float().cpu().numpy()
@@ -172,7 +234,9 @@ def qwen2_l0_qk_kv0_probe(
     print_dbg_raw(arch, line_pos, "L0_k_kv0_tpos_h", kpos, head_dim)
 
 
-def qwen2_l0_head0_logits(base, h_in, cos, sin, line_pos, sliding_window: int):
+def qwen2_l0_head0_logits(
+    base, h_in, cos, sin, position_ids, line_pos, sliding_window: int
+):
     """Pre-softmax Q·K/sqrt(d) for layer 0 head 0, keys t_start..t_start+natt-1 (matches lumen)."""
     import math
 
@@ -187,7 +251,7 @@ def qwen2_l0_head0_logits(base, h_in, cos, sin, line_pos, sliding_window: int):
     inv_scale = 1.0 / math.sqrt(float(hd))
     q = attn.q_proj(h_norm).view(b, tlen, nh, hd).transpose(1, 2)
     k = attn.k_proj(h_norm).view(b, tlen, nkv, hd).transpose(1, 2)
-    q, k = _hf_apply_rotary_pos_emb(q, k, cos, sin)
+    q, k = _qwen2_apply_rotary_pos_emb(q, k, cos, sin, position_ids)
     t_start = 0
     if sliding_window > 0:
         t_start = line_pos + 1 - sliding_window
@@ -377,11 +441,17 @@ def main() -> None:
 
     cos = None
     sin = None
+    position_ids = None
     if arch == "qwen2":
         position_ids = torch.arange(
             embed_out.shape[1], device=dev, dtype=torch.long
         ).unsqueeze(0)
-        cos, sin = base.rotary_emb(embed_out, position_ids)
+        h_in_l0 = hs[0] if len(hs) == n_layers + 1 else embed_out
+        try:
+            cos, sin = qwen2_get_rotary_cos_sin(base, h_in_l0, position_ids)
+        except Exception as e:
+            print(f"hf_hidden_ref: Qwen2 rotary failed: {e}", file=sys.stderr)
+            sys.exit(1)
 
     if len(hs) == n_layers + 1:
         e = hs[0][0, line_pos].detach().float().cpu().numpy()
@@ -396,9 +466,14 @@ def main() -> None:
                 .numpy()
             )
             print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
-            if arch == "qwen2" and cos is not None and sin is not None:
+            if (
+                arch == "qwen2"
+                and cos is not None
+                and sin is not None
+                and position_ids is not None
+            ):
                 qflat, kflat = qwen2_qk_flat_after_rope(
-                    base, l, hs[l], cos, sin, line_pos
+                    base, l, hs[l], cos, sin, position_ids, line_pos
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
@@ -406,10 +481,10 @@ def main() -> None:
                     sw = effective_attn_sliding_window(model.config)
                     hd0 = base.layers[0].self_attn.head_dim
                     qwen2_l0_qk_kv0_probe(
-                        base, hs[l], cos, sin, line_pos, arch, hd0
+                        base, hs[l], cos, sin, position_ids, line_pos, arch, hd0
                     )
                     lg = qwen2_l0_head0_logits(
-                        base, hs[l], cos, sin, line_pos, sw
+                        base, hs[l], cos, sin, position_ids, line_pos, sw
                     )
                     print(vec_fp_line(arch, line_pos, "L0_logits_h0", lg))
                     print_dbg_raw(arch, line_pos, "L0_h0_logits", lg)
@@ -467,9 +542,14 @@ def main() -> None:
                 .numpy()
             )
             print(vec_fp_line(arch, line_pos, f"L{l}_norm", nvec))
-            if arch == "qwen2" and cos is not None and sin is not None:
+            if (
+                arch == "qwen2"
+                and cos is not None
+                and sin is not None
+                and position_ids is not None
+            ):
                 qflat, kflat = qwen2_qk_flat_after_rope(
-                    base, l, h_in, cos, sin, line_pos
+                    base, l, h_in, cos, sin, position_ids, line_pos
                 )
                 print(vec_fp_line(arch, line_pos, f"L{l}_rope", qflat))
                 print(vec_fp_line(arch, line_pos, f"L{l}_krope", kflat))
@@ -477,10 +557,10 @@ def main() -> None:
                     sw = effective_attn_sliding_window(model.config)
                     hd0 = base.layers[0].self_attn.head_dim
                     qwen2_l0_qk_kv0_probe(
-                        base, h_in, cos, sin, line_pos, arch, hd0
+                        base, h_in, cos, sin, position_ids, line_pos, arch, hd0
                     )
                     lg = qwen2_l0_head0_logits(
-                        base, h_in, cos, sin, line_pos, sw
+                        base, h_in, cos, sin, position_ids, line_pos, sw
                     )
                     print(vec_fp_line(arch, line_pos, "L0_logits_h0", lg))
                     print_dbg_raw(arch, line_pos, "L0_h0_logits", lg)
