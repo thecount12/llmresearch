@@ -74,14 +74,19 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 		snprint(kbuf, sizeof kbuf, "L%d_norm", l);
 		forward_debug_emit(dbg, cfg, pos, kbuf, s->xb, dim);
 		/*
-		 * GGUF maps attn_k/v as [dim, kdim] (transpose of PyTorch [kdim, dim]); use matvec_k_proj_gguf.
-		 * attn_q and attn_out are [dim, dim] with the same axis order as PyTorch [out, in] row-major;
-		 * use matvec like the HF linear (do not use matvec_k_proj_gguf — that would apply W^T).
+		 * attn_q is [dim,dim] PyTorch [out,in] row-major → matvec.
+		 * Llama-family GGUF k/v are stored [dim,kdim] (transpose of PT [kdim,dim]) → matvec_k_proj_gguf.
+		 * Qwen2 GGUF follows HF: k/v stay [kdim,dim] like q → matvec (matvec_k would apply W^T).
 		 */
 		matvec(s->q, lw->wq, s->xb, dim, dim);
 		if(m->loader_kind == LoaderGGUF){
-			matvec_k_proj_gguf(s->k, lw->wk, s->xb, kdim, dim);
-			matvec_k_proj_gguf(s->v, lw->wv, s->xb, kdim, dim);
+			if(cfg->arch == ArchQwen2){
+				matvec(s->k, lw->wk, s->xb, kdim, dim);
+				matvec(s->v, lw->wv, s->xb, kdim, dim);
+			}else{
+				matvec_k_proj_gguf(s->k, lw->wk, s->xb, kdim, dim);
+				matvec_k_proj_gguf(s->v, lw->wv, s->xb, kdim, dim);
+			}
 		}else{
 			matvec(s->k, lw->wk, s->xb, kdim, dim);
 			matvec(s->v, lw->wv, s->xb, kdim, dim);
