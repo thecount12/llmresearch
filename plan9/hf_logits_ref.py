@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-Print the same lumen_hf fingerprint lines as lumen -F (pre-mask next-token logits).
+Print the same lumen_hf fingerprint lines as lumen -F (pre-mask next-token logits),
+and optionally a greedy decode chain matching lumen's decode_logits_mask + argmax
+(compare: lumen -P tok -n K -e, stderr lines gen[0]..gen[K-1]).
 
   python3 hf_logits_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok
+  python3 hf_logits_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p hello2.tok --dtype float16 --greedy-steps 8
+
   # -p and -P are the same (token id file). -m is the HF repo id, not your .gguf path.
 
 Compare merged stdout+stderr from Plan 9 (rc: >file >[2=1]; mk installs lumen):
 
   lumen -m model.gguf -P hello2.tok -n 1 -F >/tmp/out >[2=1]; grep lumen_hf /tmp/out
+  lumen -m model.gguf -P hello2.tok -n 8 -e >/tmp/out >[2=1]; grep gen /tmp/out
 
 Requires: pip install torch transformers
 Use --dtype float16 to align better with F16 GGUF (default float32).
@@ -67,6 +72,46 @@ def parse_torch_dtype(name: str):
     if n not in table:
         raise ValueError(f"unknown dtype {name!r} (float32, float16, bfloat16)")
     return table[n]
+
+
+# plan9/sampler.c ArchQwen2 qwen2_eog[] + eos/pad (applied after forward).
+_QWEN2_FORBID_EXTRA = (128247, 151643, 151645, 151662, 151663, 151664)
+
+
+def _config_token_id_list(config, name: str) -> list[int]:
+    v = getattr(config, name, None)
+    if v is None:
+        return []
+    if isinstance(v, (list, tuple)):
+        return [int(x) for x in v]
+    return [int(v)]
+
+
+def logits_forbid_ids(config) -> list[int]:
+    """Token ids to set to -1e30 before greedy sample (match lumen decode_logits_mask)."""
+    out: list[int] = []
+    mt = getattr(config, "model_type", None) or ""
+    if mt == "qwen2":
+        out.extend(_QWEN2_FORBID_EXTRA)
+    out.extend(_config_token_id_list(config, "eos_token_id"))
+    out.extend(_config_token_id_list(config, "pad_token_id"))
+    seen: set[int] = set()
+    uniq: list[int] = []
+    for i in out:
+        if i not in seen:
+            seen.add(i)
+            uniq.append(i)
+    return uniq
+
+
+def apply_logits_mask_inplace(x, forbid: list[int], vocab: int) -> None:
+    import numpy as np
+
+    neg = -1e30
+    a = np.asarray(x, dtype=np.float32).reshape(-1)
+    for t in forbid:
+        if 0 <= t < vocab:
+            a[t] = neg
 
 
 def load_causal_lm(model_id: str, dtype):
@@ -145,6 +190,13 @@ def main() -> None:
         default="float32",
         help="model weights/activations: float32 (default), float16, bfloat16 — closer to F16 GGUF",
     )
+    ap.add_argument(
+        "--greedy-steps",
+        type=int,
+        default=0,
+        metavar="K",
+        help="after printing -F pre_mask lines, run K greedy steps with lumen-style logits mask; compare lumen -n K -e",
+    )
     args = ap.parse_args()
 
     if str(args.model).lower().endswith(".gguf"):
@@ -186,16 +238,44 @@ def main() -> None:
     m.eval()
     dev = torch.device(args.device)
     m.to(dev)
+    forbid = logits_forbid_ids(m.config)
+
     input_ids = torch.tensor([ids], dtype=torch.long, device=dev)
     with torch.no_grad():
         out = m(input_ids)
     logits = out.logits[0, -1].detach().float().cpu().numpy()
+    vocab = int(logits.shape[0])
     print(
         f"lumen_hf: after_prompt prompt_tok={len(ids)} dtype={dt} "
         f"next-token logits (pre_mask, before EOG mask)"
     )
     for line in fingerprint_lines(logits):
         print(line)
+
+    k = int(args.greedy_steps)
+    if k <= 0:
+        return
+
+    import numpy as np
+
+    print(
+        f"lumen_hf: greedy_chain steps={k} (post-mask argmax; match lumen -n {k} -e gen[i] lines)",
+        flush=True,
+    )
+    cur = input_ids
+    for step in range(k):
+        if step > 0:
+            with torch.no_grad():
+                out = m(cur)
+            logits = out.logits[0, -1].detach().float().cpu().numpy()
+        masked = np.array(logits, dtype=np.float32, copy=True)
+        apply_logits_mask_inplace(masked, forbid, vocab)
+        gid = int(np.argmax(masked))
+        print(
+            f"lumen_hf: gen[{step}] id={gid} logit={float(masked[gid]):g}",
+            flush=True,
+        )
+        cur = torch.cat([cur, torch.tensor([[gid]], dtype=torch.long, device=dev)], dim=1)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@
 #   tok=hello2.tok
 #   row=19482
 #   pos=1
+#   gsteps=8   (greedy chain length for milestone 4)
 #   run=1   (optional: execute lumen; default 0 = instructions only)
 
 if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
@@ -17,6 +18,7 @@ if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
 if(~ $#tok 0) tok=hello2.tok
 if(~ $#row 0) row=19482
 if(~ $#pos 0) pos=1
+if(~ $#gsteps 0) gsteps=8
 if(~ $#run 0) run=0
 
 bin=./lumen
@@ -59,6 +61,14 @@ if(~ $run 1) {
 			echo '[parity] step 3 failed:' $status
 		if not
 			grep lumen_hf $tmp
+
+		echo
+		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
+		$bin -m $gguf -P $tok -n $gsteps -e >$tmp >[2=1]
+		if(~ $status ?*)
+			echo '[parity] step 4 failed:' $status
+		if not
+			grep 'gen\[' $tmp
 		rm -f $tmp
 	}
 	echo
@@ -66,6 +76,7 @@ if(~ $run 1) {
 	echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 	echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --pos '^$pos^' --dtype float16'
 	echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
+	echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16 --greedy-steps '^$gsteps
 	echo
 }
 if not {
@@ -82,7 +93,13 @@ echo '--- 3) next-token logits: lumen -F vs hf_logits_ref (end-to-end) ---'
 echo ' lumen -m '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo
-echo '--- 4) moving forward ---'
+echo '--- 4) multi-step greedy (milestone): lumen -e vs hf_logits_ref --greedy-steps ---'
+echo ' gsteps=8   # optional override before rc'
+echo ' lumen -m '^$gguf^' -P '^$tok^' -n '^$gsteps^' -e >/tmp/lumen.out >[2=1]; grep gen /tmp/lumen.out'
+echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16 --greedy-steps '^$gsteps
+echo ' Expect gen[0] to match after single-token parity; later steps drift if GGUF vs F16 differs.'
+echo
+echo '--- 5) moving forward ---'
 echo ' Run lumen automatically:  run=1 rc parity.rc'
 echo ' Host-only HF:  scripts/host_parity.sh — save outputs under baselines/ (see baselines/PARITY_HELLO2_POS1.txt).'
 echo ' Compare pre_logits sumsq/cksum (step 2) first; then greedy_id in lumen_hf (step 3).'
