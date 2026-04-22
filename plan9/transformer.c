@@ -200,17 +200,28 @@ transformer_forward(Model *m, RunState *s, int token, int pos, char *err, int ne
 
 		rmsnorm(s->xb, s->x, lw->rms_ffn_weight, dim, cfg->rms_eps);
 		if(m->loader_kind == LoaderGGUF){
-			matvec_gate_up_gguf(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
-			matvec_gate_up_gguf(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
+			/*
+			 * Llama GGUF ffn_gate/up/down are transposed vs PT linear; Qwen2 GGUF matches PT [hidden,dim] rows.
+			 */
+			if(cfg->arch == ArchQwen2){
+				matvec(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
+				matvec(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
+			}else{
+				matvec_gate_up_gguf(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
+				matvec_gate_up_gguf(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
+			}
 		}else{
 			matvec(s->hb, lw->w1, s->xb, cfg->hidden_dim, dim);
 			matvec(s->hb2, lw->w3, s->xb, cfg->hidden_dim, dim);
 		}
 		for(i = 0; i < cfg->hidden_dim; i++)
 			s->hb[i] = silu(s->hb[i]) * s->hb2[i];
-		if(m->loader_kind == LoaderGGUF)
-			matvec_ffn_down_gguf(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
-		else
+		if(m->loader_kind == LoaderGGUF){
+			if(cfg->arch == ArchQwen2)
+				matvec(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
+			else
+				matvec_ffn_down_gguf(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
+		}else
 			matvec(s->xb, lw->w2, s->hb, dim, cfg->hidden_dim);
 		accum(s->x, s->xb, dim);
 		snprint(kbuf, sizeof kbuf, "L%d", l);
