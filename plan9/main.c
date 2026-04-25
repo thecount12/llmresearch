@@ -743,6 +743,9 @@ main(int argc, char **argv)
 		if(emit_ids && i == 0)
 			fprint(2, "step0 post-mask: greedy id=%d logit=%g\n", next, state.logits[next]);
 		if(emit_ids){
+			/* So merged stdout+stderr (>[2=1]) does not glue gen[i] to prior stdout bytes. */
+			if(i > 0)
+				fprint(2, "\n");
 			fprint(2, "gen[%d] id=%d", i, next);
 			if(model.token_str != nil && next >= 0 && next < model.cfg.vocab_size
 			    && model.token_str[next] != nil)
