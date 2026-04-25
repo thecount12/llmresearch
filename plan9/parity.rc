@@ -64,7 +64,8 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
-		$bin -m $gguf -P $tok -n $gsteps -e >$tmp >[2=1]
+		# stderr = gen[i] lines; discard stdout (decoded pieces) so grep is not confused
+		$bin -m $gguf -P $tok -n $gsteps -e >/dev/null 2>$tmp
 		if(~ $status ?*)
 			echo '[parity] step 4 failed:' $status
 		if not
@@ -95,9 +96,9 @@ echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo
 echo '--- 4) multi-step greedy (milestone): lumen -e vs hf_logits_ref --greedy-steps ---'
 echo ' gsteps=8   # optional override before rc'
-echo ' lumen -m '^$gguf^' -P '^$tok^' -n '^$gsteps^' -e >/tmp/lumen.out >[2=1]; grep gen /tmp/lumen.out'
+echo ' lumen -m '^$gguf^' -P '^$tok^' -n '^$gsteps^' -e >/dev/null 2>/tmp/lumen.out; grep gen /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16 --greedy-steps '^$gsteps
-echo ' Expect gen[0] to match after single-token parity; later steps drift if GGUF vs F16 differs.'
+echo ' Compare id= on each gen[i] line; logit may differ (GGUF vs HF F16).'
 echo
 echo '--- 5) moving forward ---'
 echo ' Run lumen automatically:  run=1 rc parity.rc'
