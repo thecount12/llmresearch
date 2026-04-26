@@ -81,6 +81,7 @@ usage(void)
 	fprint(2, "       -D  forward trace: stderr lumen_dbg (+ lumen_dbg_raw L0 pre/post-RoPE Q/K, logits/probs, preatn); arg is pos or \"all\"\n");
 	fprint(2, "            compare to hf_hidden_ref.py on host; use e.g. -D 1 for last prompt tok of a 2-token -P file\n");
 	fprint(2, "       -Z  dump first 16 floats of embedding row for token id (stderr); compare hf_hidden_ref.py --embed-row\n");
+	fprint(2, "            with -n 0 and no -p/-P/-D/-F: exit after dump (no KV alloc / forward)\n");
 	fprint(2, "       -W  dup stderr to stdout; use with shell redirect one stream (e.g. rc: lumen -W >out); parity.rc needs this for grep\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "            token pieces are buffered so UTF-8 bytes split across tokens decode correctly\n");
@@ -692,6 +693,15 @@ main(int argc, char **argv)
 		fprint(2, "lumen: note: ids in -P must come from the same tokenizer as this GGUF (e.g. encode_prompt_hf.py -m Qwen/Qwen2.5-0.5B-Instruct for Qwen2.5 GGUF)\n");
 	if(model.loader_kind == LoaderGGUF && model.token_str != nil)
 		fprint(2, "lumen: note: stdout is UTF-8 pieces from GGUF; if decoded text looks wrong on any UTF-8 viewer, compare token ids with a reference (e.g. llama.cpp) using -e\n");
+
+	/*
+	 * Embed-only: -Z with -n 0 and no prompt skips KV/run_state and the dummy space-token forward.
+	 * Placed after -v so  lumen -v -m … -Z id -n 0  still prints config.  -D / -F force full path.
+	 */
+	if(embed_dump_id >= 0 && steps == 0 && prompt_file == nil && strlen(prompt) == 0 && !debug_fwd && !hf_fingerprint){
+		free_model(&model);
+		exits(nil);
+	}
 
 	if(prompt_file != nil && n_prompt_ids + steps > model.cfg.seq_len)
 		sysfatal("prompt (%d tok) + steps (%d) exceeds seq_len=%d; raise -c or shorten -n",
