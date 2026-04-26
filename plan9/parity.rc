@@ -39,6 +39,8 @@ if(~ $run 1) {
 	ps=$pid
 	if(~ $#ps 0) ps=0
 	tmp=/tmp/parity^$ps^'.out'
+	# Grep into a second file, then test -s; direct grep|stdout can be a no-op on some rc.
+	gout=/tmp/parity^$ps^'.gout'
 	skip=0
 	if(~ $#bin 0) {
 		echo '[parity] no lumen binary in ./lumen or ./6.out — from this directory run:  mk'
@@ -57,27 +59,39 @@ if(~ $run 1) {
 		echo '--- 1) lumen embed row '^$row^' ---'
 		# Both stderr and stdout into tmp (fprint(2) lines like lumen_dump: ...).
 		$bin -m $gguf -Z $row -n 0 >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 1: empty file' $status
-		grep lumen_dump $tmp
+		if(! test -s $tmp) echo '[parity] step 1: empty capture' $status
+		grep lumen_dump $tmp >$gout
+		if(! test -s $gout) echo '[parity] step 1: empty file' $status
+		if not
+			cat $gout
 
 		echo
 		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
 		$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 2: empty file' $status
-		grep lumen_dbg $tmp
+		if(! test -s $tmp) echo '[parity] step 2: empty capture' $status
+		grep lumen_dbg $tmp >$gout
+		if(! test -s $gout) echo '[parity] step 2: empty file' $status
+		if not
+			cat $gout
 
 		echo
 		echo '--- 3) lumen -F (next-token logits) ---'
 		$bin -m $gguf -P $tok -n 1 -F >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 3: empty file' $status
-		grep lumen_hf $tmp
+		if(! test -s $tmp) echo '[parity] step 3: empty capture' $status
+		grep lumen_hf $tmp >$gout
+		if(! test -s $gout) echo '[parity] step 3: empty file' $status
+		if not
+			cat $gout
 
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
 		$bin -m $gguf -P $tok -n $gsteps -e >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 4: empty file' $status
-		grep gen $tmp
-		rm -f $tmp
+		if(! test -s $tmp) echo '[parity] step 4: empty capture' $status
+		grep gen $tmp >$gout
+		if(! test -s $gout) echo '[parity] step 4: empty file' $status
+		if not
+			cat $gout
+		rm -f $tmp $gout
 	}
 	echo
 	echo '--- Host: run these next to compare ---'
