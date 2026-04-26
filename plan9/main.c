@@ -46,6 +46,7 @@ static void
 fprint_str_bounded(int fd, char *s, int maxb)
 {
 	int i, c;
+	char b[1];
 
 	if(s == nil)
 		return;
@@ -57,7 +58,8 @@ fprint_str_bounded(int fd, char *s, int maxb)
 		c = s[i] & 0xff;
 		if(c == 0)
 			return;
-		fputc(c, fd);
+		b[0] = c;
+		write(fd, b, 1);
 	}
 	if((s[i] & 0xff) != 0)
 		fprint(fd, " …");
@@ -507,7 +509,6 @@ main(int argc, char **argv)
 	emit_ids = 0;
 	hf_fingerprint = 0;
 	debug_fwd = 0;
-	debug_fwd_pos = 0;
 	darg = nil;
 	embed_dump_id = -1;
 	pretty = 0;
