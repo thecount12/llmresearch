@@ -41,6 +41,28 @@ dump_embed_row(Model *m, int token, int nfirst)
 	free(buf);
 }
 
+/* Print s to fd: bytes until '\0' or maxb, never past maxb (NUB even if s is wrong). */
+static void
+fprint_str_bounded(int fd, char *s, int maxb)
+{
+	int i, c;
+
+	if(s == nil)
+		return;
+	if(maxb < 1)
+		maxb = 1;
+	if(maxb > 512)
+		maxb = 512;
+	for(i = 0; i < maxb; i++){
+		c = s[i] & 0xff;
+		if(c == 0)
+			return;
+		fputc(c, fd);
+	}
+	if((s[i] & 0xff) != 0)
+		fprint(fd, " …");
+}
+
 static void
 usage(void)
 {
@@ -644,8 +666,11 @@ main(int argc, char **argv)
 					int id;
 
 					id = prompt_ids[i];
-					if(id >= 0 && id < model.cfg.vocab_size && model.token_str[id] != nil)
-						fprint(2, "  prompt[%d] id=%d piece=%s\n", i, id, model.token_str[id]);
+					if(id >= 0 && id < model.cfg.vocab_size && model.token_str[id] != nil){
+						fprint(2, "  prompt[%d] id=%d piece=", i, id);
+						fprint_str_bounded(2, model.token_str[id], 256);
+						fprint(2, "\n");
+					}
 					else
 						fprint(2, "  prompt[%d] id=%d piece=(no string)\n", i, id);
 				}
@@ -748,8 +773,11 @@ main(int argc, char **argv)
 				fprint(2, "\n");
 			fprint(2, "gen[%d] id=%d\n", i, next);
 			if(model.token_str != nil && next >= 0 && next < model.cfg.vocab_size
-			    && model.token_str[next] != nil)
-				fprint(2, "  piece: %s\n", model.token_str[next]);
+			    && model.token_str[next] != nil){
+				fprint(2, "  piece: ");
+				fprint_str_bounded(2, model.token_str[next], 256);
+				fprint(2, "\n");
+			}
 		}
 		emit_token(&model, next, pretty);
 		token = next;
