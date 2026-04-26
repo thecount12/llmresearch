@@ -21,15 +21,29 @@ if(~ $#pos 0) pos=1
 if(~ $#gsteps 0) gsteps=8
 if(~ $#run 0) run=0
 
-bin=./lumen
-if(! test -x $bin)
-	bin=./6.out
-if(! test -x $bin)
-	bin=lumen
+# Executable: override with  lumenbin=/path/to/lumen  before rc, else ./lumen or ./6.out (from  mk  in this dir).
+bin=''
+if(! ~ $#lumenbin 0) {
+	bin=$lumenbin
+} if not {
+	if(test -f ./lumen && test -x ./lumen)
+		bin=./lumen
+	if not if(test -f ./6.out && test -x ./6.out)
+		bin=./6.out
+}
+if(! ~ $#lumenbin 0 && (! test -f $bin || ! test -x $bin)) {
+	echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
+	bin=''
+}
 
 if(~ $run 1) {
 	tmp=/tmp/parity.$pid.out
 	skip=0
+	if(~ $#bin 0) {
+		echo '[parity] no lumen binary in ./lumen or ./6.out — from this directory run:  mk'
+		echo '[parity] (see plan9/mkfile; or:  lumenbin=/path/to/lumen  rc parity.rc)'
+		skip=1
+	}
 	if(! test -r $gguf) {
 		echo '[parity] cannot read '^$gguf
 		skip=1
