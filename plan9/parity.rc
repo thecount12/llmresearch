@@ -25,15 +25,22 @@ if(~ $#run 0) run=0
 bin=''
 if(! ~ $#lumenbin 0) {
 	bin=$lumenbin
-} if not {
-	if(test -f ./lumen && test -x ./lumen)
-		bin=./lumen
-	if not if(test -f ./6.out && test -x ./6.out)
-		bin=./6.out
 }
-if(! ~ $#lumenbin 0 && (! test -f $bin || ! test -x $bin)) {
-	echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
-	bin=''
+if(~ $#lumenbin 0) {
+	if(test -f ./lumen) if(test -x ./lumen) bin=./lumen
+	if(~ $#bin 0) if(test -f ./6.out) if(test -x ./6.out) bin=./6.out
+}
+if(! ~ $#lumenbin 0) {
+	if(! test -f $bin) {
+		echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
+		bin=''
+	}
+	if not {
+		if(! test -x $bin) {
+			echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
+			bin=''
+		}
+	}
 }
 
 if(~ $run 1) {
