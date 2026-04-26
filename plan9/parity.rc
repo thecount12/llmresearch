@@ -55,32 +55,28 @@ if(~ $run 1) {
 	}
 	if(~ $skip 0) {
 		echo '--- 1) lumen embed row '^$row^' ---'
+		# Both stderr and stdout into tmp (fprint(2) lines like lumen_dump: ...).
 		$bin -m $gguf -Z $row -n 0 >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 1: empty capture' $status
-		if not
-			grep lumen_dump $tmp
+		if(! test -s $tmp) echo '[parity] step 1: empty file' $status
+		grep lumen_dump $tmp
 
 		echo
 		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
 		$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 2: empty capture' $status
-		if not
-			grep lumen_dbg $tmp
+		if(! test -s $tmp) echo '[parity] step 2: empty file' $status
+		grep lumen_dbg $tmp
 
 		echo
 		echo '--- 3) lumen -F (next-token logits) ---'
 		$bin -m $gguf -P $tok -n 1 -F >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 3: empty capture' $status
-		if not
-			grep lumen_hf $tmp
+		if(! test -s $tmp) echo '[parity] step 3: empty file' $status
+		grep lumen_hf $tmp
 
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
-		# One capture: stdout+stderr. Grep for gen[ (also UTF-8 on stdout, ids on stderr).
 		$bin -m $gguf -P $tok -n $gsteps -e >$tmp >[2=1]
-		if(! test -s $tmp) echo '[parity] step 4: empty capture' $status
-		if not
-			grep 'gen\[' $tmp
+		if(! test -s $tmp) echo '[parity] step 4: empty file' $status
+		grep gen $tmp
 		rm -f $tmp
 	}
 	echo
