@@ -2,7 +2,7 @@
 # HF vs lumen parity ladder (Qwen2.5 + GGUF).
 # Default: print commands only. To run lumen steps on Plan 9:  run=1 rc parity.rc
 # HF scripts run on a host with torch/transformers (copy the echoed python lines).
-# Merge stderr into stdout: >file >[2=1] (see rc(1))
+# Merge stderr into stdout for capture: use lumen -W and one >file (see main -W; >[2=1] alone is unreliable in some rc).
 #
 # Set these before rc:
 #   gguf=Qwen2.5-0.5B-Instruct-f16.gguf
@@ -57,8 +57,8 @@ if(~ $run 1) {
 	}
 	if(~ $skip 0) {
 		echo '--- 1) lumen embed row '^$row^' ---'
-		# Both stderr and stdout into tmp (fprint(2) lines like lumen_dump: ...).
-		$bin -m $gguf -Z $row -n 0 >$tmp >[2=1]
+		# -W: dup(1,2) in lumen so fprint(2) (lumen_dump, …) goes to the same file as stdout; >[2=1] is unreliable in some rc.
+		$bin -W -m $gguf -Z $row -n 0 >$tmp
 		if(! test -s $tmp) echo '[parity] step 1: empty capture' $status
 		grep lumen_dump $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 1: empty file' $status
@@ -67,7 +67,7 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
-		$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
+		$bin -W -m $gguf -P $tok -n 0 -D $pos >$tmp
 		if(! test -s $tmp) echo '[parity] step 2: empty capture' $status
 		grep lumen_dbg $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 2: empty file' $status
@@ -76,7 +76,7 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 3) lumen -F (next-token logits) ---'
-		$bin -m $gguf -P $tok -n 1 -F >$tmp >[2=1]
+		$bin -W -m $gguf -P $tok -n 1 -F >$tmp
 		if(! test -s $tmp) echo '[parity] step 3: empty capture' $status
 		grep lumen_hf $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 3: empty file' $status
@@ -85,7 +85,7 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
-		$bin -m $gguf -P $tok -n $gsteps -e >$tmp >[2=1]
+		$bin -W -m $gguf -P $tok -n $gsteps -e >$tmp
 		if(! test -s $tmp) echo '[parity] step 4: empty capture' $status
 		grep gen $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 4: empty file' $status
@@ -103,21 +103,21 @@ if(~ $run 1) {
 }
 if not {
 echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
-echo ' lumen -m '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out >[2=1]; grep lumen_dump /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out; grep lumen_dump /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 echo
 echo '--- 2) hidden fingerprints (-D pos vs hf_hidden_ref --pos): lumen_dbg lines ---'
-echo ' lumen -m '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out >[2=1]; grep lumen_dbg /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out; grep lumen_dbg /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --pos '^$pos^' --dtype float16'
 echo ' L0: logits_h0, probs_h0 (attn bisect), preatn, attn; lumen_dbg_raw = float diff; last line pre_logits.'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref (end-to-end) ---'
-echo ' lumen -m '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out >[2=1]; grep lumen_hf /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out; grep lumen_hf /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo
 echo '--- 4) multi-step greedy (milestone): lumen -e vs hf_logits_ref --greedy-steps ---'
 echo ' gsteps=8   # optional override before rc'
-echo ' lumen -m '^$gguf^' -P '^$tok^' -n '^$gsteps^' -e >/dev/null 2>/tmp/lumen.out; grep gen /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^' -P '^$tok^' -n '^$gsteps^' -e >/tmp/lumen.out; grep gen /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16 --greedy-steps '^$gsteps
 echo ' Compare id= on each gen[i] line; logit may differ (GGUF vs HF F16).'
 echo

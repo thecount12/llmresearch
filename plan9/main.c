@@ -68,7 +68,7 @@ fprint_str_bounded(int fd, char *s, int maxb)
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a] [-F] [-D pos|all] [-Z tokid]\n", argv0);
+	fprint(2, "usage: %s [-m model.bin] [-c ctx] [-n steps] [-p prompt] [-P tokfile] [-B] [-t temp] [-s seed] [-v] [-g] [-e] [-a] [-F] [-D pos|all] [-Z tokid] [-W]\n", argv0);
 	fprint(2, "       -c  max context length (KV cache / attention); default caps large GGUF seq_len to 4096; -c 0 = use model max\n");
 	fprint(2, "       -p  each byte is a token id (toy / byte-vocab only); for GGUF BPE models use encode_prompt_hf.py → -P\n");
 	fprint(2, "       -P  file of prompt token ids (overrides -p); default: ASCII integers; with -B: binary int32 LE\n");
@@ -81,6 +81,7 @@ usage(void)
 	fprint(2, "       -D  forward trace: stderr lumen_dbg (+ lumen_dbg_raw L0 pre/post-RoPE Q/K, logits/probs, preatn); arg is pos or \"all\"\n");
 	fprint(2, "            compare to hf_hidden_ref.py on host; use e.g. -D 1 for last prompt tok of a 2-token -P file\n");
 	fprint(2, "       -Z  dump first 16 floats of embedding row for token id (stderr); compare hf_hidden_ref.py --embed-row\n");
+	fprint(2, "       -W  dup stderr to stdout; use with shell redirect one stream (e.g. rc: lumen -W >out); parity.rc needs this for grep\n");
 	fprint(2, "       -a  pretty print: map common HF-style token strings (e.g. Ġ→space, Ċ→newline)\n");
 	fprint(2, "            token pieces are buffered so UTF-8 bytes split across tokens decode correctly\n");
 	fprint(2, "       model path must be passed with -m (first arg alone is not the file)\n");
@@ -487,7 +488,7 @@ main(int argc, char **argv)
 	char err[512];
 	char *model_path, *prompt, *prompt_file;
 	int *prompt_ids;
-	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, hf_fingerprint, debug_fwd, debug_fwd_pos, embed_dump_id, pretty, bin_prompt, have_seed;
+	int steps, pos, i, token, next, promptlen, n_prompt_ids, prompt_tok_count, nstr, verbose, dump_logits, emit_ids, hf_fingerprint, debug_fwd, debug_fwd_pos, embed_dump_id, pretty, bin_prompt, have_seed, logmerge;
 	ForwardDebug fwd_dbg;
 	char *darg;
 	int cap_ctx;	/* -1 = default policy; 0 = full model seq_len; >0 = cap */
@@ -565,9 +566,15 @@ main(int argc, char **argv)
 	case 'a':
 		pretty = 1;
 		break;
+	case 'W':
+		/* After shell redirect (e.g. lumen -W >out), make stderr = stdout so fprint(2) lines land in the file. */
+		logmerge = 1;
+		break;
 	default:
 		usage();
 	}ARGEND
+	if(logmerge && dup(1, 2) < 0)
+		sysfatal("dup(1,2): %r");
 
 	if(bin_prompt && prompt_file == nil)
 		sysfatal("-B requires -P");
