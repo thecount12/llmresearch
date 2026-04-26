@@ -21,30 +21,24 @@ if(~ $#pos 0) pos=1
 if(~ $#gsteps 0) gsteps=8
 if(~ $#run 0) run=0
 
-# Executable: override with  lumenbin=/path/to/lumen  before rc, else ./lumen or ./6.out (from  mk  in this dir).
+# Executable:  lumenbin=/path/to/lumen  to override, else ./lumen or ./6.out (run  mk  in this directory).
 bin=''
-if(! ~ $#lumenbin 0) {
+if(! ~ $#lumenbin 0)
 	bin=$lumenbin
-}
-if(~ $#lumenbin 0) {
-	if(test -f ./lumen) if(test -x ./lumen) bin=./lumen
-	if(~ $#bin 0) if(test -f ./6.out) if(test -x ./6.out) bin=./6.out
-}
+if(~ $#lumenbin 0) if(test -f ./lumen -a -x ./lumen) bin=./lumen
+if(~ $#lumenbin 0) if(~ $#bin 0) if(test -f ./6.out -a -x ./6.out) bin=./6.out
 if(! ~ $#lumenbin 0) {
-	if(! test -f $bin) {
+	if(! test -f $bin -a -x $bin) {
 		echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
 		bin=''
-	}
-	if not {
-		if(! test -x $bin) {
-			echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
-			bin=''
-		}
 	}
 }
 
 if(~ $run 1) {
-	tmp=/tmp/parity.$pid.out
+	# $pid: Plan 9 process id (fallback to 0 for odd rc; keeps path non-empty for redirects).
+	ps=$pid
+	if(~ $#ps 0) ps=0
+	tmp=/tmp/parity^$ps^'.out'
 	skip=0
 	if(~ $#bin 0) {
 		echo '[parity] no lumen binary in ./lumen or ./6.out — from this directory run:  mk'
@@ -62,7 +56,7 @@ if(~ $run 1) {
 	if(~ $skip 0) {
 		echo '--- 1) lumen embed row '^$row^' ---'
 		$bin -m $gguf -Z $row -n 0 >$tmp >[2=1]
-		if(~ $status ?*)
+		if(! ~ $#status 0)
 			echo '[parity] step 1 failed:' $status
 		if not
 			grep lumen_dump $tmp
@@ -70,7 +64,7 @@ if(~ $run 1) {
 		echo
 		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
 		$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
-		if(~ $status ?*)
+		if(! ~ $#status 0)
 			echo '[parity] step 2 failed:' $status
 		if not
 			grep lumen_dbg $tmp
@@ -78,16 +72,16 @@ if(~ $run 1) {
 		echo
 		echo '--- 3) lumen -F (next-token logits) ---'
 		$bin -m $gguf -P $tok -n 1 -F >$tmp >[2=1]
-		if(~ $status ?*)
+		if(! ~ $#status 0)
 			echo '[parity] step 3 failed:' $status
 		if not
 			grep lumen_hf $tmp
 
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
-		# stderr = gen[i] lines; discard stdout (decoded pieces) so grep is not confused
-		$bin -m $gguf -P $tok -n $gsteps -e >/dev/null 2>$tmp
-		if(~ $status ?*)
+		# Same as steps 1–3: one capture file. Grep for gen[ only (stdout = UTF-8 pieces, stderr = ids).
+		$bin -m $gguf -P $tok -n $gsteps -e >$tmp >[2=1]
+		if(! ~ $#status 0)
 			echo '[parity] step 4 failed:' $status
 		if not
 			grep 'gen\[' $tmp
