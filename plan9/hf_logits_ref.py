@@ -16,6 +16,10 @@ Compare merged stdout+stderr from Plan 9 (rc: >file >[2=1]; mk installs lumen):
 
 Requires: pip install torch transformers
 Use --dtype float16 to align better with F16 GGUF (default float32).
+
+Parity: Plan 9 lumen runs in float32, so pre_mask greedy_logit and sumsq/cksum lines need not match HF float16
+exactly. Small differences in the fourth significant digit are normal; what matters for the parity ladder is
+that greedy_id (and --greedy-steps gen[i]) match lumen -e when prompts and masking agree.
 """
 
 from __future__ import annotations

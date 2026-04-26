@@ -14,6 +14,10 @@
 #   run=1   (optional: execute lumen; default 0 = instructions only)
 #
 # Build:  mk  → ./lumen or ./6.out;  mk install  → e.g. $home/bin/$objtype/lumen or /usr/william/bin/amd64/lumen (any $path/…/lumen is found below). No -m = toy; parity uses -m $gguf.
+#
+# Parity note:  lumen uses float32 end-to-end; HF with --dtype float16 is not bit-identical.  Layer sumsq/cksum and
+# the printed top logit (e.g. 15.29 vs 15.30) may differ slightly;  greedy_id / gen[i]  should still match when the
+# ladder is set up the same.  For closer layer checksums, run HF in float32 or document F16 as approximate.
 
 if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
 if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'

@@ -18,6 +18,10 @@ Raw embedding row (e.g. token 19482 in hello2.tok):
 Use -D with the same token index as the last id in -P (e.g. 1 for two ids).
 
 Use --dtype float16 to compare against F16 GGUF more closely (see hf_logits_ref.py --dtype).
+
+Parity: lumen -D uses float32; HF with float16 will differ on many sumsq/cksum and raw lines. That is expected.
+Matching greedy token IDs vs hf_logits_ref (after_prompt) is the stricter end-to-end check; for closer layer
+fingerprints, use the same dtype on both sides (e.g. HF --dtype float32) or treat float16 as approximate.
 """
 
 from __future__ import annotations
