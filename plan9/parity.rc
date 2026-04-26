@@ -12,6 +12,8 @@
 #   pos=1
 #   gsteps=8   (greedy chain length for milestone 4)
 #   run=1   (optional: execute lumen; default 0 = instructions only)
+#
+# Build:  mk  → ./lumen or ./6.out;  mk install  → e.g. $home/bin/$objtype/lumen or /usr/william/bin/amd64/lumen (any $path/…/lumen is found below). No -m = toy; parity uses -m $gguf.
 
 if(~ $#gguf 0) gguf=Qwen2.5-0.5B-Instruct-f16.gguf
 if(~ $#hf 0) hf='Qwen/Qwen2.5-0.5B-Instruct'
@@ -21,12 +23,26 @@ if(~ $#pos 0) pos=1
 if(~ $#gsteps 0) gsteps=8
 if(~ $#run 0) run=0
 
-# Executable:  lumenbin=/path/to/lumen  to override, else ./lumen or ./6.out (run  mk  in this directory).
+# lumen path:  lumenbin=...  to override; else ./lumen, ./6.out, $home/bin/$objtype/lumen, then $path/…/lumen (finds /usr/william/bin/amd64/lumen etc.)
 bin=''
 if(! ~ $#lumenbin 0)
 	bin=$lumenbin
 if(~ $#lumenbin 0) if(test -f ./lumen -a -x ./lumen) bin=./lumen
 if(~ $#lumenbin 0) if(~ $#bin 0) if(test -f ./6.out -a -x ./6.out) bin=./6.out
+if(~ $#lumenbin 0) if(~ $#bin 0) if(! ~ $#objtype 0) {
+	lu=$home^'/bin/'^$objtype^'/lumen'
+	if(test -f $lu -a -x $lu) bin=$lu
+}
+if(~ $#lumenbin 0) if(~ $#bin 0) if(! ~ $#cputype 0) {
+	lu=$home^'/bin/'^$cputype^'/lumen'
+	if(test -f $lu -a -x $lu) bin=$lu
+}
+if(~ $#lumenbin 0) if(~ $#bin 0) for(p in $path) {
+	if(~ $#bin 0) {
+		lu=$p^/lumen
+		if(test -f $lu -a -x $lu) bin=$lu
+	}
+}
 if(! ~ $#lumenbin 0) {
 	if(! test -f $bin -a -x $bin) {
 		echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
@@ -43,8 +59,7 @@ if(~ $run 1) {
 	gout=/tmp/parity^$ps^'.gout'
 	skip=0
 	if(~ $#bin 0) {
-		echo '[parity] no lumen binary in ./lumen or ./6.out — from this directory run:  mk'
-		echo '[parity] (see plan9/mkfile; or:  lumenbin=/path/to/lumen  rc parity.rc)'
+		echo '[parity] no lumen: run  mk  or  mk install  in plan9/ (or  lumenbin=/path/to/lumen  before rc)'
 		skip=1
 	}
 	if(! test -r $gguf) {
