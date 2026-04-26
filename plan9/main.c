@@ -52,7 +52,7 @@ usage(void)
 	fprint(2, "       -s  seed RNG for temperature sampling (Plan 9 nrand/srand)\n");
 	fprint(2, "       -v  verbose (config / loader on stderr)\n");
 	fprint(2, "       -g  print top logits each generation step (stderr; before sampling)\n");
-	fprint(2, "       -e  print each greedy token id (and piece string) to stderr for comparison with HF/llama.cpp\n");
+	fprint(2, "       -e  print each greedy token id to stderr (optional 2nd line: vocab piece); for HF/llama.cpp\n");
 	fprint(2, "       -F  after prompt: print pre-mask logits fingerprint (greedy, sumsq, cksum, top-5) on stderr; use hf_logits_ref.py on host\n");
 	fprint(2, "       -D  forward trace: stderr lumen_dbg (+ lumen_dbg_raw L0 pre/post-RoPE Q/K, logits/probs, preatn); arg is pos or \"all\"\n");
 	fprint(2, "            compare to hf_hidden_ref.py on host; use e.g. -D 1 for last prompt tok of a 2-token -P file\n");
@@ -743,14 +743,13 @@ main(int argc, char **argv)
 		if(emit_ids && i == 0)
 			fprint(2, "step0 post-mask: greedy id=%d logit=%g\n", next, state.logits[next]);
 		if(emit_ids){
-			/* So merged stdout+stderr (>[2=1]) does not glue gen[i] to prior stdout bytes. */
+			/* id on its own line so the next line is never shell-echoed onto gen[i] in copy-paste. */
 			if(i > 0)
 				fprint(2, "\n");
-			fprint(2, "gen[%d] id=%d", i, next);
+			fprint(2, "gen[%d] id=%d\n", i, next);
 			if(model.token_str != nil && next >= 0 && next < model.cfg.vocab_size
 			    && model.token_str[next] != nil)
-				fprint(2, " piece=%s", model.token_str[next]);
-			fprint(2, "\n");
+				fprint(2, "  piece: %s\n", model.token_str[next]);
 		}
 		emit_token(&model, next, pretty);
 		token = next;
