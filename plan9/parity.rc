@@ -80,13 +80,16 @@ if(~ $run 1) {
 		skip=1
 	}
 	if(~ $skip 0) {
-		# rc:  lm=-W -m $gguf  assigns only -W to lm and runs -m as a command — use a list in parentheses.
-		lm=(-W -m $gguf)
+		# rc: do not use  lm=-W -m …  (only -W is assigned; -m runs as a command).  Do not rely on  lm=(…)  — not all rc builds support lists.  usectx + two explicit lines work everywhere.
+		usectx=0
 		if(! ~ $#ctx 0) if(! ~ $ctx '')
-			lm=(-W -m $gguf -c $ctx)
+			usectx=1
 		echo '--- 1) lumen embed row '^$row^' ---'
 		# -W: dup(1,2) in lumen so fprint(2) (lumen_dump, …) goes to the same file as stdout; >[2=1] is unreliable in some rc.
-		$bin $lm -Z $row -n 0 >$tmp
+		if(~ $usectx 1)
+			$bin -W -m $gguf -c $ctx -Z $row -n 0 >$tmp
+		if(~ $usectx 0)
+			$bin -W -m $gguf -Z $row -n 0 >$tmp
 		if(! test -s $tmp) echo '[parity] step 1: empty capture' $status
 		grep lumen_dump $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 1: empty file' $status
@@ -95,7 +98,10 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
-		$bin $lm -P $tok -n 0 -D $pos >$tmp
+		if(~ $usectx 1)
+			$bin -W -m $gguf -c $ctx -P $tok -n 0 -D $pos >$tmp
+		if(~ $usectx 0)
+			$bin -W -m $gguf -P $tok -n 0 -D $pos >$tmp
 		if(! test -s $tmp) echo '[parity] step 2: empty capture' $status
 		grep lumen_dbg $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 2: empty file' $status
@@ -104,7 +110,10 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 3) lumen -F (next-token logits) ---'
-		$bin $lm -P $tok -n 1 -F >$tmp
+		if(~ $usectx 1)
+			$bin -W -m $gguf -c $ctx -P $tok -n 1 -F >$tmp
+		if(~ $usectx 0)
+			$bin -W -m $gguf -P $tok -n 1 -F >$tmp
 		if(! test -s $tmp) echo '[parity] step 3: empty capture' $status
 		grep lumen_hf $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 3: empty file' $status
@@ -113,7 +122,10 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
-		$bin $lm -P $tok -n $gsteps -e >$tmp
+		if(~ $usectx 1)
+			$bin -W -m $gguf -c $ctx -P $tok -n $gsteps -e >$tmp
+		if(~ $usectx 0)
+			$bin -W -m $gguf -P $tok -n $gsteps -e >$tmp
 		if(! test -s $tmp) echo '[parity] step 4: empty capture' $status
 		grep gen $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 4: empty file' $status

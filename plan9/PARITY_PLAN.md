@@ -65,6 +65,13 @@ Archive outputs under **`baselines/`** when a milestone passes.
 
 **Phase 4A:** **`ctx`** + **`kv64`** + extended **`host_parity.sh`** are in tree; you still need to **run** the long-prefix and cap tests on your machines and record results under **`baselines/`** if you want them archived.
 
+### `parity.rc` / rc gotchas
+
+- **`lm=-W -m $gguf`** assigns only **`-W`** to `lm`; **`-m`** is then run as a command (errors like **`./-m`**).
+- **`lm=(-W -m $gguf)`** is not reliable on all **`rc`** builds.
+- **`parity.rc`** uses **`usectx`** and two explicit lines: **`$bin -W -m $gguf -c $ctx …`** vs **`$bin -W -m $gguf …`**.
+- If **`lumen`** shows **vocab 256** and **`hello2.tok`** ids are “out of range”, **`-m $gguf` never reached** the binary (wrong rc words) or **`gguf`** is unreadable / missing from cwd.
+
 ## Quick commands
 
 ```text
