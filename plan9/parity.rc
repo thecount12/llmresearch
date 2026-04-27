@@ -139,7 +139,7 @@ if(~ $run 1) {
 	echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --pos '^$pos^' --dtype float16'
 	echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 	echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16 --greedy-steps '^$gsteps
-	echo ' (optional, tighter -D vs float32 lumen: repeat with --dtype float32 on the hf_hidden / hf_logits lines)'
+	echo ' Optional: repeat hf_hidden / hf_logits with --dtype float32 for tighter -D vs float32 lumen.'
 	echo
 }
 if not {
