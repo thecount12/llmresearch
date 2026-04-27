@@ -42,14 +42,28 @@ Archive outputs under **`baselines/`** when a milestone passes.
 
 ## Phase 4–5 — Hardening (ongoing)
 
-- **Context:** exercise **`-c`**, long prompts vs `seq_len`, KV cache limits.
-- **Other quants:** Q8, Q4_K GGUF — expect to re-run the ladder; may need tensor/loader paths.
-- **Other sizes/arch:** repeat Phases 0–3 for a new checkpoint; update baselines.
-- **Automation:** `scripts/host_parity.sh` and checked-in baseline text when useful.
+### Phase 4A — Context / KV (started in repo)
+
+1. Optional **`ctx=N`** in **`parity.rc`** → passes **`lumen -c N`** on every step (`N=0` = model max per `main.c`).
+2. **Failure injection:** set **`ctx`** smaller than `prompt_len + gsteps` and confirm **`lumen`** errors cleanly (prompt + steps vs `seq_len`).
+3. **Long prefix fixture:** **`fixtures/kv64.tok`** (64× token `14990`). From **`plan9/`** run e.g.  
+   `ctx=128 tok=fixtures/kv64.tok pos=63 run=1 rc parity.rc`  
+   and on the host **`hf_hidden_ref.py -p fixtures/kv64.tok --pos 63`**, **`hf_logits_ref.py -p fixtures/kv64.tok`**, etc. (same HF model).
+4. **`scripts/host_parity.sh`** now runs steps **1–4** (includes **`--greedy-steps`**). Optional **`PARITY_SAVE=file`** appends the combined grep’d log for baselines.
+
+### Phase 4B — Other GGUF quants (not started)
+
+- Re-run Phases 1–3 with Q8 / Q4_K weights; fix loader/tensor if forward is wrong.
+
+### Phase 4C — Other checkpoints (not started)
+
+- New size or arch: repeat Phase 0–3; add **`baselines/…`** snippets.
 
 ## Current status (checkpoint)
 
-**Qwen2.5-0.5B-Instruct, F16 GGUF, `hello2.tok` pos=1:** ladder passes for **embed**, **greedy next token**, and **8-step greedy chain** vs HF reference; layer checksums vs HF float16 are documented as approximate.
+**Qwen2.5-0.5B-Instruct, F16 GGUF, `hello2.tok` pos=1:** Phases **0–3** done — ladder passes for **embed**, **greedy next token**, and **8-step greedy chain** vs HF; layer checksums vs HF float16 are approximate.
+
+**Phase 4A:** **`ctx`** + **`kv64`** + extended **`host_parity.sh`** are in tree; you still need to **run** the long-prefix and cap tests on your machines and record results under **`baselines/`** if you want them archived.
 
 ## Quick commands
 

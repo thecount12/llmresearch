@@ -11,6 +11,7 @@
 #   row=19482
 #   pos=1
 #   gsteps=8   (greedy chain length for milestone 4)
+#   ctx=   (optional: lumen -c N or -c 0 for full model seq; Phase 4 context / KV cap tests)
 #   run=1   (optional: execute lumen; default 0 = instructions only)
 #
 # Build:  mk  → ./lumen or ./6.out;  mk install  → e.g. $home/bin/$objtype/lumen or /usr/william/bin/amd64/lumen (any $path/…/lumen is found below). No -m = toy; parity uses -m $gguf.
@@ -26,6 +27,10 @@ if(~ $#row 0) row=19482
 if(~ $#pos 0) pos=1
 if(~ $#gsteps 0) gsteps=8
 if(~ $#run 0) run=0
+
+cfrag=''
+if(! ~ $#ctx 0) if(! ~ $ctx '')
+	cfrag=' -c '^$ctx
 
 # lumen path:  lumenbin=...  to override; else ./lumen, ./6.out, $home/bin/$objtype/lumen, then $path/…/lumen (finds /usr/william/bin/amd64/lumen etc.)
 bin=''
@@ -75,9 +80,10 @@ if(~ $run 1) {
 		skip=1
 	}
 	if(~ $skip 0) {
+		lbase=$bin^' -W -m '^$gguf^$cfrag
 		echo '--- 1) lumen embed row '^$row^' ---'
 		# -W: dup(1,2) in lumen so fprint(2) (lumen_dump, …) goes to the same file as stdout; >[2=1] is unreliable in some rc.
-		$bin -W -m $gguf -Z $row -n 0 >$tmp
+		$lbase -Z $row -n 0 >$tmp
 		if(! test -s $tmp) echo '[parity] step 1: empty capture' $status
 		grep lumen_dump $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 1: empty file' $status
@@ -86,7 +92,7 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
-		$bin -W -m $gguf -P $tok -n 0 -D $pos >$tmp
+		$lbase -P $tok -n 0 -D $pos >$tmp
 		if(! test -s $tmp) echo '[parity] step 2: empty capture' $status
 		grep lumen_dbg $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 2: empty file' $status
@@ -95,7 +101,7 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 3) lumen -F (next-token logits) ---'
-		$bin -W -m $gguf -P $tok -n 1 -F >$tmp
+		$lbase -P $tok -n 1 -F >$tmp
 		if(! test -s $tmp) echo '[parity] step 3: empty capture' $status
 		grep lumen_hf $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 3: empty file' $status
@@ -104,7 +110,7 @@ if(~ $run 1) {
 
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
-		$bin -W -m $gguf -P $tok -n $gsteps -e >$tmp
+		$lbase -P $tok -n $gsteps -e >$tmp
 		if(! test -s $tmp) echo '[parity] step 4: empty capture' $status
 		grep gen $tmp >$gout
 		if(! test -s $gout) echo '[parity] step 4: empty file' $status
@@ -123,28 +129,32 @@ if(~ $run 1) {
 }
 if not {
 echo '--- 1) embed row: lumen -Z vs hf_hidden_ref --embed-row ---'
-echo ' lumen -W -m '^$gguf^' -Z '^$row^' -n 0 >/tmp/lumen.out; grep lumen_dump /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^$cfrag^' -Z '^$row^' -n 0 >/tmp/lumen.out; grep lumen_dump /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' --embed-row '^$row^' --dtype float16'
 echo
 echo '--- 2) hidden fingerprints (-D pos vs hf_hidden_ref --pos): lumen_dbg lines ---'
-echo ' lumen -W -m '^$gguf^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out; grep lumen_dbg /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^$cfrag^' -P '^$tok^' -n 0 -D '^$pos^' >/tmp/lumen.out; grep lumen_dbg /tmp/lumen.out'
 echo ' python3 hf_hidden_ref.py -m '^$hf^' -p '^$tok^' --pos '^$pos^' --dtype float16'
 echo ' L0: logits_h0, probs_h0 (attn bisect), preatn, attn; lumen_dbg_raw = float diff; last line pre_logits.'
 echo
 echo '--- 3) next-token logits: lumen -F vs hf_logits_ref (end-to-end) ---'
-echo ' lumen -W -m '^$gguf^' -P '^$tok^' -n 1 -F >/tmp/lumen.out; grep lumen_hf /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^$cfrag^' -P '^$tok^' -n 1 -F >/tmp/lumen.out; grep lumen_hf /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16'
 echo
 echo '--- 4) multi-step greedy (milestone): lumen -e vs hf_logits_ref --greedy-steps ---'
 echo ' gsteps=8   # optional override before rc'
-echo ' lumen -W -m '^$gguf^' -P '^$tok^' -n '^$gsteps^' -e >/tmp/lumen.out; grep gen /tmp/lumen.out'
+echo ' lumen -W -m '^$gguf^$cfrag^' -P '^$tok^' -n '^$gsteps^' -e >/tmp/lumen.out; grep gen /tmp/lumen.out'
 echo ' python3 hf_logits_ref.py -m '^$hf^' -p '^$tok^' --dtype float16 --greedy-steps '^$gsteps
 echo ' Compare id= on each gen[i] line; logit may differ (GGUF vs HF F16).'
 echo ' Optional: same hf_* lines with --dtype float32 for closer layer cksums to lumen (still not guaranteed identical).'
 echo
-echo '--- 5) moving forward ---'
+echo '--- 5) Phase 4 (context): optional  ctx=128  tok=fixtures/kv64.tok  pos=63  — 64-token prefix, -D at last pos ---'
+echo ' Same rc; from plan9/:  ctx=128 tok=fixtures/kv64.tok pos=63 run=1 rc parity.rc'
+echo ' Expect failure if ctx < prompt_len + gsteps (lumen sysfatal).  ctx=0 uses model max seq.'
+echo
+echo '--- 6) moving forward ---'
 echo ' Run lumen automatically:  run=1 rc parity.rc'
-echo ' Host-only HF:  scripts/host_parity.sh — save outputs under baselines/ (see baselines/PARITY_HELLO2_POS1.txt).'
+echo ' Host-only HF:  scripts/host_parity.sh — optional PARITY_SAVE=file; see baselines/PARITY_HELLO2_POS1.txt.'
 echo ' Compare pre_logits sumsq/cksum (step 2) first; then greedy_id in lumen_hf (step 3).'
 echo ' ~1% drift on L0_logits_h0 F16 GGUF vs HF FP32 is common; fix large greedy gaps, not every cksum.'
 echo
