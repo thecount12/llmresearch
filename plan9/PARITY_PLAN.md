@@ -63,7 +63,7 @@ Archive outputs under **`baselines/`** when a milestone passes.
 
 **Qwen2.5-0.5B-Instruct, F16 GGUF, `hello2.tok` pos=1:** Phases **0–3** done — ladder passes for **embed**, **greedy next token**, and **8-step greedy chain** vs HF; layer checksums vs HF float16 are approximate.
 
-**Phase 4A:** **`ctx`** + **`kv64`** + extended **`host_parity.sh`** are in tree; you still need to **run** the long-prefix and cap tests on your machines and record results under **`baselines/`** if you want them archived.
+**Phase 4A:** **`ctx`** + **`fixtures/kv64.tok`** + extended **`host_parity.sh`** are in tree. Long-prefix smoke: **`tok=fixtures/kv64.tok pos=63`** should show **`lumen_hf: … prompt_tok=64`** and a different greedy chain than **`hello2.tok`** — compare token-for-token to **`hf_logits_ref.py -p fixtures/kv64.tok --greedy-steps 8`** on the host. Optional: **`ctx=128`** on the same **`kv64`** run and a **`ctx`**-too-small failure test. Archive outputs under **`baselines/`** if you want a frozen record.
 
 ### `parity.rc` / rc gotchas
 

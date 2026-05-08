@@ -97,7 +97,7 @@ if(~ $run 1) {
 			cat $gout
 
 		echo
-		echo '--- 2) lumen -D '^$pos^' (hello2.tok) ---'
+		echo '--- 2) lumen -D '^$pos^' ('^$tok^') ---'
 		if(~ $usectx 1)
 			$bin -W -m $gguf -c $ctx -P $tok -n 0 -D $pos >$tmp
 		if(~ $usectx 0)

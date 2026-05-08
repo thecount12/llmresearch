@@ -1,0 +1,35 @@
+Parity baseline checklist: fixtures/kv64.tok — 64× token id 14990 (long-prefix / KV smoke).
+Use debug position pos=63 (0-based index of the last prompt token).
+Embed row spot-check uses row=14990 (same id as every prompt token).
+
+Reference pair: GGUF Qwen2.5-0.5B-Instruct F16 + HF Qwen/Qwen2.5-0.5B-Instruct.
+
+Plan 9 (from plan9/; merge stderr for grep via -W — parity.rc does this when run=1):
+
+  tok=fixtures/kv64.tok pos=63 row=14990 gsteps=8 run=1 rc parity.rc
+
+  # Manual equivalents (expect lumen_hf: … prompt_tok=64)
+  lumen -W -m Qwen2.5-0.5B-Instruct-f16.gguf -P fixtures/kv64.tok -n 1 -F >/tmp/out 2>&1
+  grep lumen_hf /tmp/out
+
+  lumen -W -m Qwen2.5-0.5B-Instruct-f16.gguf -P fixtures/kv64.tok -n 8 -e >/tmp/out 2>&1
+  grep gen /tmp/out
+
+  # Optional Phase 4A: context cap (must fit prompt + generation)
+  ctx=128 tok=fixtures/kv64.tok pos=63 run=1 rc parity.rc
+
+  # Optional failure injection: 64 prompt tokens + gsteps=8 > ctx=60
+  ctx=60 tok=fixtures/kv64.tok pos=63 gsteps=8 run=1 rc parity.rc
+  # Expect sysfatal: prompt (64 tok) + steps (8) exceeds seq_len=60 …
+
+Host (torch + transformers), from plan9/:
+
+  ./scripts/host_parity.sh Qwen/Qwen2.5-0.5B-Instruct fixtures/kv64.tok 63 14990 8
+
+  # Manual equivalents
+  python3 hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct --embed-row 14990 --dtype float16
+  python3 hf_hidden_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p fixtures/kv64.tok --pos 63 --dtype float16
+  python3 hf_logits_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p fixtures/kv64.tok --dtype float16
+  python3 hf_logits_ref.py -m Qwen/Qwen2.5-0.5B-Instruct -p fixtures/kv64.tok --dtype float16 --greedy-steps 8
+
+Archive outputs when passing (same tiers as PARITY_HELLO2_POS1.txt: pre_logits / greedy chain).

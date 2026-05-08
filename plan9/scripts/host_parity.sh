@@ -3,6 +3,7 @@
 # Usage: ./scripts/host_parity.sh [HF_MODEL] [TOKFILE] [POS] [EMBED_ROW] [GREEDY_STEPS]
 # Optional: PARITY_SAVE=file  →  tee full combined log to file (for baselines/).
 set -e
+set -o pipefail
 cd "$(dirname "$0")/.."
 HF=${1:-Qwen/Qwen2.5-0.5B-Instruct}
 TOK=${2:-hello2.tok}
