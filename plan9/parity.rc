@@ -90,9 +90,14 @@ if(~ $run 1) {
 			$bin -W -m $gguf -c $ctx -Z $row -n 0 >$tmp
 		if(~ $usectx 0)
 			$bin -W -m $gguf -Z $row -n 0 >$tmp
+		if(! ~ $status '')
+			echo '[parity] step 1: lumen exit status' $status
 		if(! test -s $tmp) echo '[parity] step 1: empty capture' $status
 		grep lumen_dump $tmp >$gout
-		if(! test -s $gout) echo '[parity] step 1: empty file' $status
+		if(! test -s $gout) {
+			echo '[parity] step 1: empty file' $status
+			if(test -s $tmp) cat $tmp
+		}
 		if not
 			cat $gout
 
@@ -102,9 +107,14 @@ if(~ $run 1) {
 			$bin -W -m $gguf -c $ctx -P $tok -n 0 -D $pos >$tmp
 		if(~ $usectx 0)
 			$bin -W -m $gguf -P $tok -n 0 -D $pos >$tmp
+		if(! ~ $status '')
+			echo '[parity] step 2: lumen exit status' $status
 		if(! test -s $tmp) echo '[parity] step 2: empty capture' $status
 		grep lumen_dbg $tmp >$gout
-		if(! test -s $gout) echo '[parity] step 2: empty file' $status
+		if(! test -s $gout) {
+			echo '[parity] step 2: empty file' $status
+			if(test -s $tmp) cat $tmp
+		}
 		if not
 			cat $gout
 
@@ -114,9 +124,14 @@ if(~ $run 1) {
 			$bin -W -m $gguf -c $ctx -P $tok -n 1 -F >$tmp
 		if(~ $usectx 0)
 			$bin -W -m $gguf -P $tok -n 1 -F >$tmp
+		if(! ~ $status '')
+			echo '[parity] step 3: lumen exit status' $status
 		if(! test -s $tmp) echo '[parity] step 3: empty capture' $status
 		grep lumen_hf $tmp >$gout
-		if(! test -s $gout) echo '[parity] step 3: empty file' $status
+		if(! test -s $gout) {
+			echo '[parity] step 3: empty file' $status
+			if(test -s $tmp) cat $tmp
+		}
 		if not
 			cat $gout
 
@@ -126,9 +141,14 @@ if(~ $run 1) {
 			$bin -W -m $gguf -c $ctx -P $tok -n $gsteps -e >$tmp
 		if(~ $usectx 0)
 			$bin -W -m $gguf -P $tok -n $gsteps -e >$tmp
+		if(! ~ $status '')
+			echo '[parity] step 4: lumen exit status' $status
 		if(! test -s $tmp) echo '[parity] step 4: empty capture' $status
 		grep gen $tmp >$gout
-		if(! test -s $gout) echo '[parity] step 4: empty file' $status
+		if(! test -s $gout) {
+			echo '[parity] step 4: empty file' $status
+			if(test -s $tmp) cat $tmp
+		}
 		if not
 			cat $gout
 		rm -f $tmp $gout
