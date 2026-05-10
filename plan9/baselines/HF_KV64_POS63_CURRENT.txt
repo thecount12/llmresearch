@@ -1,0 +1,32 @@
+=== hf_hidden_ref --embed-row 14990 ===
+hf_hidden_ref: dtype=torch.float16
+hf_dump: embed_row id=14990 first_16 -0.0065612793 0.0064697266 -0.0092163086 0.0020599365 -0.004699707 0.0038146973 -0.0059814453 0.0022277832 0.014404297 -0.015869141 -0.0055847168 -0.017211914 -0.013244629 -0.0022125244 -0.0037841797 -0.0092163086
+
+=== hf_hidden_ref -p fixtures/kv64.tok --pos 63 (pre_logits + L0_) ===
+lumen_dbg: arch=qwen2 pos=63 kind=L0_norm dim=896 sumsq=10.5356826369176027 cksum=4222e0c032a79e83x
+lumen_dbg: arch=qwen2 pos=63 kind=L0_rope dim=896 sumsq=53480.3995091850957 cksum=c8440b4a7254be83x
+lumen_dbg: arch=qwen2 pos=63 kind=L0_krope dim=128 sumsq=135312.499467260204 cksum=978d9494ce311483x
+lumen_dbg: arch=qwen2 pos=63 kind=L0_logits_h0 dim=64 sumsq=1270625.5 cksum=8dd6995af332b403x
+lumen_dbg: arch=qwen2 pos=63 kind=L0_probs_h0 dim=64 sumsq=0.0963555752444165137 cksum=a176515bf5d3b403x
+lumen_dbg: arch=qwen2 pos=63 kind=L0_preatn dim=896 sumsq=0.593563295993817519 cksum=e565a737d6cbfe83x
+lumen_dbg: arch=qwen2 pos=63 kind=L0_attn dim=896 sumsq=0.260318568937023542 cksum=200efd0337e9c183x
+lumen_dbg: arch=qwen2 pos=63 kind=pre_logits dim=896 sumsq=56308.1192570764033 cksum=e54c3ccbb2c29e83x
+
+=== hf_logits_ref -p fixtures/kv64.tok (next-token fingerprint) ===
+lumen_hf: after_prompt prompt_tok=64 dtype=torch.float16 next-token logits (pre_mask, before EOG mask)
+lumen_hf: pre_mask greedy_id=19482 greedy_logit=11.3359 sumsq=1892193.82099461602 cksum=e6bf0bb173660283x
+lumen_hf: pre_mask top5 19482:11.3359 9425:11 271:10.8594 2038:10.7422 3837:10.6641
+
+=== hf_logits_ref --greedy-steps 8 ===
+lumen_hf: after_prompt prompt_tok=64 dtype=torch.float16 next-token logits (pre_mask, before EOG mask)
+lumen_hf: pre_mask greedy_id=19482 greedy_logit=11.3359 sumsq=1892193.82099461602 cksum=e6bf0bb173660283x
+lumen_hf: pre_mask top5 19482:11.3359 9425:11 271:10.8594 2038:10.7422 3837:10.6641
+lumen_hf: greedy_chain steps=8 (post-mask argmax; match lumen -n 8 -e gen[i] lines)
+lumen_hf: gen[0] id=19482 logit=11.3359
+lumen_hf: gen[1] id=11 logit=12.7891
+lumen_hf: gen[2] id=358 logit=13.7031
+lumen_hf: gen[3] id=1079 logit=20.1094
+lumen_hf: gen[4] id=4460 logit=14.9609
+lumen_hf: gen[5] id=311 logit=21.625
+lumen_hf: gen[6] id=1855 logit=18.6094
+lumen_hf: gen[7] id=264 logit=18.1406

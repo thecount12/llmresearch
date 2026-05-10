@@ -53,7 +53,27 @@ Archive outputs under **`baselines/`** when a milestone passes.
 
 ### Phase 4B — Other GGUF quants (not started)
 
-- Re-run Phases 1–3 with Q8 / Q4_K weights; fix loader/tensor if forward is wrong.
+- Re-run Phases 1–3 with a **Q8_0** or **Q4_0** GGUF (see `gguf-notes.md`: **`loader-gguf.c`** dequantizes **F32, F16, Q8_0, Q4_0** only; **Q4_K** and other block types still need loader work).
+- Same **`parity.rc`** / **`host_parity.sh`** ladder; expect **more drift** vs HF F16; treat **greedy_id / gen[]** as the primary pass criterion unless you add an HF quant reference.
+
+**Produce a lumen-compatible GGUF on a host:** `convert_hf_to_gguf.py` lives in the **[llama.cpp](https://github.com/ggerganov/llama.cpp)** repo (repo root), **not** in `llmresearch/plan9/`. Clone or update llama.cpp, `cd` into that tree, install its Python deps if prompted, then run the script **by path** (first arg = local HF model dir with `config.json` + weights, e.g. from `huggingface-cli download`):
+
+```text
+cd /path/to/llama.cpp
+python3 convert_hf_to_gguf.py /path/to/local/Qwen2.5-0.5B-Instruct --outfile Qwen2.5-0.5B-Instruct-q8_0.gguf --outtype q8_0
+# or:  --outtype q4_0
+```
+
+If you run `python3 convert_hf_to_gguf.py` from **`plan9/`**, Python looks for **`plan9/convert_hf_to_gguf.py`** and fails — always **`cd` to llama.cpp** or pass the **full path** to the script under llama.cpp.
+
+Copy the `.gguf` to Plan 9, then from **`plan9/`**:
+
+```text
+gguf=Qwen2.5-0.5B-Instruct-q8_0.gguf
+tok=hello2.tok pos=1 row=19482 gsteps=8 run=1 rc parity.rc
+```
+
+If **`lumen`** fails at load with an **unsupported GGML type**, the file likely uses **Q4_K / Q5 / IQ** — re-export with **`q8_0`** or **`q4_0`** only, or extend **`loader-gguf.c`**.
 
 ### Phase 4C — Other checkpoints (not started)
 
@@ -64,6 +84,8 @@ Archive outputs under **`baselines/`** when a milestone passes.
 **Qwen2.5-0.5B-Instruct, F16 GGUF, `hello2.tok` pos=1:** Phases **0–3** done — ladder passes for **embed**, **greedy next token**, and **8-step greedy chain** vs HF; layer checksums vs HF float16 are approximate.
 
 **Phase 4A:** Done for **Qwen2.5-0.5B F16 + `kv64`**: long-prefix parity (**`tok=fixtures/kv64.tok pos=63`**, greedy chain vs **`hf_logits_ref --greedy-steps`**), **`ctx=128`** cap smoke, and **`ctx=60`** negative test (**too many prompt ids** / cap respected). **`parity.rc`** prints underlying lumen errors when grep has no matches. Archive under **`baselines/`** if you want a frozen HF log (**`PARITY_SAVE`** + **`scripts/host_parity.sh`**).
+
+**Next:** **Phase 4B** — export **`q8_0`** or **`q4_0`** GGUF (see Phase 4B block above), copy to Plan 9, rerun **`parity.rc`** with **`gguf=`** set; keep **`host_parity.sh`** on the same HF id for greedy-id comparison.
 
 ### `parity.rc` / rc gotchas
 
