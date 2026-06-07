@@ -81,20 +81,29 @@ if(~ $run 1) {
 	}
 	if(~ $skip 0) {
 		# rc: do not use  lm=-W -m …  (only -W is assigned; -m runs as a command).  Do not rely on  lm=(…)  — not all rc builds support lists.  usectx + two explicit lines work everywhere.
+		# Merge stderr: rc applies redirs left-to-right — use >$tmp >[2=1] (see l0parity.rc); captures sysfatal and cannot-exec too.
 		usectx=0
 		if(! ~ $#ctx 0) if(! ~ $ctx '')
 			usectx=1
+		echo '[parity] bin='^$bin^' gguf='^$gguf^' tok='^$tok
 		echo '--- 1) lumen embed row '^$row^' ---'
-		# -W: dup(1,2) in lumen so fprint(2) (lumen_dump, …) goes to the same file as stdout; >[2=1] is unreliable in some rc.
 		if(~ $usectx 1)
-			$bin -W -m $gguf -c $ctx -Z $row -n 0 >$tmp
+			$bin -m $gguf -c $ctx -Z $row -n 0 >$tmp >[2=1]
 		if(~ $usectx 0)
-			$bin -W -m $gguf -Z $row -n 0 >$tmp
-		if(! test -s $tmp) echo '[parity] step 1: empty capture' $status
+			$bin -m $gguf -Z $row -n 0 >$tmp >[2=1]
+		ost=$status
+		if(! test -s $tmp) {
+			echo '[parity] step 1: empty capture'
+			if(~ $ost ?*)
+				echo '[parity] step 1: lumen exit:' $ost
+		}
 		grep lumen_dump $tmp >$gout
 		if(! test -s $gout) {
-			echo '[parity] step 1: empty file' $status
-			if(test -s $tmp) cat $tmp
+			echo '[parity] step 1: no lumen_dump lines'
+			if(test -s $tmp) {
+				echo '[parity] step 1: merged output (first 20 lines):'
+				sed '20q' $tmp
+			}
 		}
 		if not
 			cat $gout
@@ -102,14 +111,22 @@ if(~ $run 1) {
 		echo
 		echo '--- 2) lumen -D '^$pos^' ('^$tok^') ---'
 		if(~ $usectx 1)
-			$bin -W -m $gguf -c $ctx -P $tok -n 0 -D $pos >$tmp
+			$bin -m $gguf -c $ctx -P $tok -n 0 -D $pos >$tmp >[2=1]
 		if(~ $usectx 0)
-			$bin -W -m $gguf -P $tok -n 0 -D $pos >$tmp
-		if(! test -s $tmp) echo '[parity] step 2: empty capture' $status
+			$bin -m $gguf -P $tok -n 0 -D $pos >$tmp >[2=1]
+		ost=$status
+		if(! test -s $tmp) {
+			echo '[parity] step 2: empty capture'
+			if(~ $ost ?*)
+				echo '[parity] step 2: lumen exit:' $ost
+		}
 		grep lumen_dbg $tmp >$gout
 		if(! test -s $gout) {
-			echo '[parity] step 2: empty file' $status
-			if(test -s $tmp) cat $tmp
+			echo '[parity] step 2: no lumen_dbg lines'
+			if(test -s $tmp) {
+				echo '[parity] step 2: merged output (first 20 lines):'
+				sed '20q' $tmp
+			}
 		}
 		if not
 			cat $gout
@@ -117,14 +134,22 @@ if(~ $run 1) {
 		echo
 		echo '--- 3) lumen -F (next-token logits) ---'
 		if(~ $usectx 1)
-			$bin -W -m $gguf -c $ctx -P $tok -n 1 -F >$tmp
+			$bin -m $gguf -c $ctx -P $tok -n 1 -F >$tmp >[2=1]
 		if(~ $usectx 0)
-			$bin -W -m $gguf -P $tok -n 1 -F >$tmp
-		if(! test -s $tmp) echo '[parity] step 3: empty capture' $status
+			$bin -m $gguf -P $tok -n 1 -F >$tmp >[2=1]
+		ost=$status
+		if(! test -s $tmp) {
+			echo '[parity] step 3: empty capture'
+			if(~ $ost ?*)
+				echo '[parity] step 3: lumen exit:' $ost
+		}
 		grep lumen_hf $tmp >$gout
 		if(! test -s $gout) {
-			echo '[parity] step 3: empty file' $status
-			if(test -s $tmp) cat $tmp
+			echo '[parity] step 3: no lumen_hf lines'
+			if(test -s $tmp) {
+				echo '[parity] step 3: merged output (first 20 lines):'
+				sed '20q' $tmp
+			}
 		}
 		if not
 			cat $gout
@@ -132,14 +157,22 @@ if(~ $run 1) {
 		echo
 		echo '--- 4) greedy '^$gsteps^' steps: lumen -e vs hf_logits_ref --greedy-steps ---'
 		if(~ $usectx 1)
-			$bin -W -m $gguf -c $ctx -P $tok -n $gsteps -e >$tmp
+			$bin -m $gguf -c $ctx -P $tok -n $gsteps -e >$tmp >[2=1]
 		if(~ $usectx 0)
-			$bin -W -m $gguf -P $tok -n $gsteps -e >$tmp
-		if(! test -s $tmp) echo '[parity] step 4: empty capture' $status
+			$bin -m $gguf -P $tok -n $gsteps -e >$tmp >[2=1]
+		ost=$status
+		if(! test -s $tmp) {
+			echo '[parity] step 4: empty capture'
+			if(~ $ost ?*)
+				echo '[parity] step 4: lumen exit:' $ost
+		}
 		grep gen $tmp >$gout
 		if(! test -s $gout) {
-			echo '[parity] step 4: empty file' $status
-			if(test -s $tmp) cat $tmp
+			echo '[parity] step 4: no gen lines'
+			if(test -s $tmp) {
+				echo '[parity] step 4: merged output (first 20 lines):'
+				sed '20q' $tmp
+			}
 		}
 		if not
 			cat $gout
