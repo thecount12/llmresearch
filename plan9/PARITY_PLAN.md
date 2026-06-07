@@ -51,10 +51,12 @@ Archive outputs under **`baselines/`** when a milestone passes.
    and on the host **`hf_hidden_ref.py -p fixtures/kv64.tok --pos 63`**, **`hf_logits_ref.py -p fixtures/kv64.tok`**, etc. (same HF model).
 4. **`scripts/host_parity.sh`** now runs steps **1–4** (includes **`--greedy-steps`**). Optional **`PARITY_SAVE=file`** appends the combined grep’d log for baselines.
 
-### Phase 4B — Other GGUF quants (not started)
+### Phase 4B — Other GGUF quants (in progress)
 
 - Re-run Phases 1–3 with a **Q8_0** or **Q4_0** GGUF (see `gguf-notes.md`: **`loader-gguf.c`** dequantizes **F32, F16, Q8_0, Q4_0** only; **Q4_K** and other block types still need loader work).
 - Same **`parity.rc`** / **`host_parity.sh`** ladder; expect **more drift** vs HF F16; treat **greedy_id / gen[]** as the primary pass criterion unless you add an HF quant reference.
+
+**Checkpoint (Qwen2.5-0.5B F16 → `llama-quantize` → Q8_0):** versus **HF F16** (`host_parity.sh`): **`hello2.tok`** — **full 8-step greedy chain matches**. **`fixtures/kv64.tok` pos=63** — **`gen[0]`** matches (**19482**); **greedy chain diverges after step 1** (quant + long-context logits reorder near-ties). For **quant-only** sanity on **`kv64`**, compare **`lumen`** to **llama.cpp** decoding with the **same** Q8_0 GGUF.
 
 **Produce a lumen-compatible GGUF on a host:** `convert_hf_to_gguf.py` lives in the **[llama.cpp](https://github.com/ggerganov/llama.cpp)** repo (repo root), **not** in `llmresearch/plan9/`. Clone or update llama.cpp, `cd` into that tree, install its Python deps if prompted, then run the script **by path** (first arg = local HF model dir with `config.json` + weights, e.g. from `huggingface-cli download`):
 
@@ -75,9 +77,28 @@ tok=hello2.tok pos=1 row=19482 gsteps=8 run=1 rc parity.rc
 
 If **`lumen`** fails at load with an **unsupported GGML type**, the file likely uses **Q4_K / Q5 / IQ** — re-export with **`q8_0`** or **`q4_0`** only, or extend **`loader-gguf.c`**.
 
-### Phase 4C — Other checkpoints (not started)
+**No HF folder needed:** from **llama.cpp**, **`llama-quantize MyModel-f16.gguf MyModel-q8_0.gguf Q8_0`** (then copy the output GGUF to Plan 9).
 
-- New size or arch: repeat Phase 0–3; add **`baselines/…`** snippets.
+### Phase 4C — Other checkpoints (next)
+
+Repeat **Phase 0–3** for a **new HF id + matching GGUF**. Same **`parity.rc`** / **`host_parity.sh`**; override **`gguf`**, **`hf`**, **`tok`**, **`row`**, **`pos`** per model.
+
+**Recommended first target:** **`Qwen/Qwen2.5-1.5B-Instruct`** — same **Qwen2** graph as 0.5B (no new arch in lumen); larger weights / KV; use **`-c 2048`** or default cap if Plan 9 RAM is tight.
+
+| Step | Action |
+|------|--------|
+| 0 | F16 GGUF: **`llama-quantize`** from HF-export F16, or **`convert_hf_to_gguf.py`** + optional quant (see 4B). Copy to Plan 9. |
+| 0 | **`lumen -W -m $gguf -v`** — vocab, dim, layers, heads, rope, **`embed_layout`**, seq_len vs HF **`config.json`**. |
+| 0 | Prompt ids: **`encode_prompt_hf.py -m Qwen/Qwen2.5-1.5B-Instruct -o fixtures/hello2_1.5b.tok "…"`** (or **`--chat`** for instruct). **Do not assume** 0.5B **`hello2.tok`** ids unless you verified the tokenizer is identical. |
+| 1–3 | **`gguf=… hf='Qwen/Qwen2.5-1.5B-Instruct' tok=… pos=… row=… run=1 rc parity.rc`** |
+| host | **`./scripts/host_parity.sh Qwen/Qwen2.5-1.5B-Instruct $tok $pos $row 8`** |
+| archive | **`baselines/PARITY_Qwen2.5-1.5B_*.txt`**, optional **`PARITY_SAVE=…`** |
+
+**Pass criteria:** same as Phases 1–3 — embed row, **`greedy_id`**, **`gen[]`** vs HF F16; layer cksums approximate.
+
+**Later targets:** **`Qwen2.5-3B-Instruct`**, **`Qwen2.5-7B-Instruct`** (RAM / **`-c`**), or **Qwen2** (non-2.5) if GGUF arch string is still **`qwen2`**. **Qwen3 / MoE / SWA hybrids** need arch loader work first — not 4C “free” repeats.
+
+See **`baselines/PARITY_PHASE4C_1.5B.txt`** for a copy-paste checklist.
 
 ## Current status (checkpoint)
 
@@ -85,7 +106,9 @@ If **`lumen`** fails at load with an **unsupported GGML type**, the file likely 
 
 **Phase 4A:** Done for **Qwen2.5-0.5B F16 + `kv64`**: long-prefix parity (**`tok=fixtures/kv64.tok pos=63`**, greedy chain vs **`hf_logits_ref --greedy-steps`**), **`ctx=128`** cap smoke, and **`ctx=60`** negative test (**too many prompt ids** / cap respected). **`parity.rc`** prints underlying lumen errors when grep has no matches. Archive under **`baselines/`** if you want a frozen HF log (**`PARITY_SAVE`** + **`scripts/host_parity.sh`**).
 
-**Next:** **Phase 4B** — export **`q8_0`** or **`q4_0`** GGUF (see Phase 4B block above), copy to Plan 9, rerun **`parity.rc`** with **`gguf=`** set; keep **`host_parity.sh`** on the same HF id for greedy-id comparison.
+**Phase 4B (Q8_0):** **`hello2`** — full greedy parity vs HF F16 ✓. **`kv64`** — **`gen[0]`** vs HF F16 ✓; **multi-step greedy vs HF F16** ✗ (documented above). Optional: **`Q4_0`**, **llama.cpp vs lumen** on **`kv64`**, **`PARITY_SAVE`** baselines.
+
+**Next:** **Phase 4C** — start with **`Qwen/Qwen2.5-1.5B-Instruct`** (see Phase 4C + **`baselines/PARITY_PHASE4C_1.5B.txt`**). Phase 4B optional follow-ups: **`Q4_0`**, llama.cpp vs lumen on **`kv64` Q8_0.
 
 ### `parity.rc` / rc gotchas
 

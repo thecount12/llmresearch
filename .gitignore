@@ -1,2 +1,5 @@
 __pycache__/
+.gguf
+**/model.safetensors
+Qwen2.5-1.5B-Instruct/
 

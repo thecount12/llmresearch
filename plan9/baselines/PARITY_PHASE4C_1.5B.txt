@@ -1,0 +1,47 @@
+Phase 4C checklist: Qwen2.5-1.5B-Instruct (first larger checkpoint).
+Same Qwen2 arch as 0.5B; new GGUF + HF id; new prompt tok file from encode_prompt_hf.py.
+
+Locked references (fill after Phase 0):
+
+  HF:     Qwen/Qwen2.5-1.5B-Instruct
+  GGUF:   Qwen2.5-1.5B-Instruct-f16.gguf   (or your filename)
+  tok:    fixtures/hello2_1.5b.tok       (generate — see below)
+  pos:    len(ids)-1                       (last prompt token index)
+  row:    <second tok id or spot-check id> (for step 1 -Z)
+
+--- Host: obtain GGUF (pick one) ---
+
+  # From HF weights (llama.cpp repo):
+  huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct --local-dir ./Qwen2.5-1.5B-Instruct
+  cd /path/to/llama.cpp
+  python3 convert_hf_to_gguf.py ./Qwen2.5-1.5B-Instruct --outfile Qwen2.5-1.5B-Instruct-f16.gguf --outtype f16
+
+  # Or quantize an existing F16:
+  ./build/bin/llama-quantize Qwen2.5-1.5B-Instruct-f16.gguf Qwen2.5-1.5B-Instruct-q8_0.gguf Q8_0
+
+--- Host: prompt + Phase 0 ---
+
+  cd plan9/
+  python3 encode_prompt_hf.py -m Qwen/Qwen2.5-1.5B-Instruct -o fixtures/hello2_1.5b.tok "hello"
+  # Or match hello2 story: encode the same text that produced 14990 19482 on 0.5B if tokenizer matches.
+
+  lumen -W -m Qwen2.5-1.5B-Instruct-f16.gguf -v    # Plan 9; compare to config.json
+
+--- Host: parity ladder ---
+
+  source ~/.venv/lumen/bin/activate
+  # Set pos= last index, row= embed spot-check id after inspecting tok file:
+  ./scripts/host_parity.sh Qwen/Qwen2.5-1.5B-Instruct fixtures/hello2_1.5b.tok <pos> <row> 8
+
+  PARITY_SAVE=baselines/HF_Qwen2.5-1.5B_<pos>.txt ./scripts/host_parity.sh ...
+
+--- Plan 9 ---
+
+  gguf=Qwen2.5-1.5B-Instruct-f16.gguf
+  hf='Qwen/Qwen2.5-1.5B-Instruct'
+  tok=fixtures/hello2_1.5b.tok
+  pos=<pos> row=<row> gsteps=8
+  # ctx=2048   # optional if default seq cap is too large for RAM
+  run=1 rc parity.rc
+
+Pass: lumen_dump first_16 ~ hf_dump; lumen_hf greedy_id + gen[] match host (F16 HF vs F32 lumen — logits may drift).
