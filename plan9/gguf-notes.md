@@ -9,7 +9,7 @@ The loader reads a **GGUF** file end-to-end: metadata, tensor names/types/offset
 - **Qwen2 GGUF**: Same **`blk.*`** tensor names as Llama-class maps (plus optional **`rope_freqs.weight`**, ignored — RoPE is computed from **`rope.freq_base`**). **Sliding-window**: Hugging Face dense instruct models often set **`use_sliding_window: false`** while still listing a numeric **`sliding_window`** in `config.json`. The loader treats **dense Qwen2** (architecture string contains `qwen2` but not `moe` / `MoE`) like HF: **effective window is off** unless GGUF metadata includes **`use_sliding_window`** set **true** (bool or 0/1 int). **Qwen2 MoE** and other variants keep the numeric **`.attention.sliding_window`** when present. Lumen does not implement per-layer **sliding_window_pattern** (HF `layer_types`); long-context parity for hybrid SWA models may require future work.
 - **GGML types**: F32, F16, Q4_0, Q8_0 (others fail with a clear error).
 - **Tokenizer**: `tokenizer.ggml.tokens` as an array of `GGUFString` (per-token UTF-8 strings).
-- **Tied embeddings**: if there is no separate output weight, copies `token_embd` into `wcls`.
+- **Tied embeddings**: if there is no separate output weight, `wcls` aliases `token_embd` (no duplicate buffer).
 
 ## CLI (`main.c` / `lumen`)
 

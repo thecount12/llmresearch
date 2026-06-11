@@ -67,6 +67,7 @@ struct Model {
 	LayerWeights *layers;
 	float *rms_final_weight;
 	float *wcls;
+	int wcls_tied;	/* 1: wcls aliases token_embedding_table (GGUF tied output); do not free wcls */
 	int owns_memory;
 	int loader_kind;
 	char **token_str;	/* GGUF tokenizer.ggml.tokens; nil if not loaded */

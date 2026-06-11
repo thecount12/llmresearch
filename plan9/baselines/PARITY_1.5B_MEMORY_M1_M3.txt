@@ -9,9 +9,9 @@ HF reference (Mac — done)
   greedy_id=271
   gen[]: 271, 40, 2776, 4460, 311, 1855, 264, 729
 
-M1 — tied-embed alias (~0.9 GB saved)
-  wcls → token_embedding_table when output.weight absent; fix free_model.
-  Regression: 0.5B parity.rc ladder must still pass.
+M1 — tied-embed alias (~0.9 GB saved) [implemented]
+  wcls → token_embedding_table when output.weight absent; free_model skips double-free.
+  Regression: 0.5B parity.rc ladder must still pass (re-run on cpu after mk install).
 
 M2 — F16 weights in RAM (~3 GB saved for 1.5B)
   Keep ushort weights; F32 matvec accumulators; loader stops expand-at-load.

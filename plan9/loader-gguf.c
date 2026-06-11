@@ -1204,6 +1204,17 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		return -1;
 	}
 
+	/*
+	 * Tied output (no output.weight): alias wcls to embed before tensor load.
+	 * Saves vocab*dim floats vs alloc + memmove after load.
+	 */
+	if(gm.output < 1){
+		free(m->wcls);
+		m->wcls = m->token_embedding_table;
+		m->wcls_tied = 1;
+		gp.tied_output = 1;
+	}
+
 	if(loadmappedtensors(fd, data_base, &gp, err, nerr) < 0){
 		if(err[0] == 0)
 			snprint(err, nerr, "failed loading mapped gguf tensors");
@@ -1213,11 +1224,6 @@ load_model_gguf(Model *m, char *path, char *err, int nerr)
 		return -1;
 	}
 	close(fd);
-
-	if(gm.output < 1){
-		memmove(m->wcls, m->token_embedding_table, cfg.vocab_size * cfg.dim * sizeof(float));
-		gp.tied_output = 1;
-	}
 
 	if(m->cfg.embed_layout < 0)
 		m->cfg.embed_layout = 0;

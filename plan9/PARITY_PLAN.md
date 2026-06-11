@@ -175,7 +175,9 @@ gguf=Qwen2.5-1.5B-Instruct-f16.gguf hf='Qwen/Qwen2.5-1.5B-Instruct' tok=hello2.t
 
 **Phase 4C (1.5B):** HF ladder on **Mac** ✓ (`greedy_id=271`, chain **`271,40,2776,4460,311,1855,264,729`**). **Plan 9 lumen** blocked on RAM — see **Phase 4C — 1.5B on memory-limited Plan 9 / QEMU** (steps **M1 → M2 → M3**). **0.5B** remains the live Plan 9 parity target until M2 lands.
 
-**Next:** Implement **M1** (tied embed), then **M2** (F16 in RAM), rerun **M3** on gabriel. Phase 4B optional: **`Q4_0`**, llama.cpp vs lumen on **`kv64` Q8_0**.
+**M1 (tied embed):** implemented — `wcls` aliases `token_embedding_table` when GGUF has no `output.weight`. Re-run **0.5B** `parity.rc` on **cpu** after `mk install`; retry **gabriel** smoke (may still need **M2** for 1.5B).
+
+**Next:** **M2** (F16 in RAM), then **M3** on gabriel. Phase 4B optional: **`Q4_0`**, llama.cpp vs lumen on **`kv64` Q8_0**.
 
 ### `parity.rc` / rc gotchas
 

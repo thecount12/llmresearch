@@ -170,7 +170,8 @@ free_model(Model *m)
 	free(m->token_embedding_table);
 	free(m->layers);
 	free(m->rms_final_weight);
-	free(m->wcls);
+	if(!m->wcls_tied)
+		free(m->wcls);
 	memset(m, 0, sizeof(*m));
 }
 
