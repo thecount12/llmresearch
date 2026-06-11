@@ -1,0 +1,32 @@
+=== hf_hidden_ref --embed-row 19482 ===
+hf_hidden_ref: dtype=torch.float16
+hf_dump: embed_row id=19482 first_16 0.0050964355 0.0031280518 0.013977051 0.0064086914 0.003616333 -0.006439209 -0.0040283203 -0.0046081543 -0.0031433105 -0.0048217773 -0.0036315918 0.0091552734 0.011108398 0.0033874512 0.008972168 0.004119873
+
+=== hf_hidden_ref -p hello2.tok --pos 1 (pre_logits + L0_) ===
+lumen_dbg: arch=qwen2 pos=1 kind=L0_norm dim=896 sumsq=7.39742984413932803 cksum=7f80bbdef7b3e83x
+lumen_dbg: arch=qwen2 pos=1 kind=L0_rope dim=896 sumsq=54473.4702738227061 cksum=6cebd3b514c3fe83x
+lumen_dbg: arch=qwen2 pos=1 kind=L0_krope dim=128 sumsq=135531.796603825176 cksum=7537db0916dd9483x
+lumen_dbg: arch=qwen2 pos=1 kind=L0_logits_h0 dim=2 sumsq=51080.453125 cksum=2108537efb205c61x
+lumen_dbg: arch=qwen2 pos=1 kind=L0_probs_h0 dim=2 sumsq=0.584371387958526611 cksum=17c8a4e6ba6d3c61x
+lumen_dbg: arch=qwen2 pos=1 kind=L0_preatn dim=896 sumsq=0.469194970016449275 cksum=fae8942004f93e83x
+lumen_dbg: arch=qwen2 pos=1 kind=L0_attn dim=896 sumsq=0.255485244931644928 cksum=e0ce8f7f56b7aad3x
+lumen_dbg: arch=qwen2 pos=1 kind=pre_logits dim=896 sumsq=64353.1341885716247 cksum=76a84bd537263e83x
+
+=== hf_logits_ref -p hello2.tok (next-token fingerprint) ===
+lumen_hf: after_prompt prompt_tok=2 dtype=torch.float16 next-token logits (pre_mask, before EOG mask)
+lumen_hf: pre_mask greedy_id=271 greedy_logit=15.2891 sumsq=834323.759694118402 cksum=53918e2c22da2283x
+lumen_hf: pre_mask top5 271:15.2891 11:14.8906 13:14.6797 369:14.5938 374:14.5234
+
+=== hf_logits_ref --greedy-steps 8 ===
+lumen_hf: after_prompt prompt_tok=2 dtype=torch.float16 next-token logits (pre_mask, before EOG mask)
+lumen_hf: pre_mask greedy_id=271 greedy_logit=15.2891 sumsq=834323.759694118402 cksum=53918e2c22da2283x
+lumen_hf: pre_mask top5 271:15.2891 11:14.8906 13:14.6797 369:14.5938 374:14.5234
+lumen_hf: greedy_chain steps=8 (post-mask argmax; match lumen -n 8 -e gen[i] lines)
+lumen_hf: gen[0] id=271 logit=15.2891
+lumen_hf: gen[1] id=39814 logit=18.3594
+lumen_hf: gen[2] id=11 logit=21.1562
+lumen_hf: gen[3] id=358 logit=20.2656
+lumen_hf: gen[4] id=646 logit=22.4062
+lumen_hf: gen[5] id=1492 logit=22.9531
+lumen_hf: gen[6] id=498 logit=22.8906
+lumen_hf: gen[7] id=448 logit=22.5938

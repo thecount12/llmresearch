@@ -100,6 +100,71 @@ Repeat **Phase 0–3** for a **new HF id + matching GGUF**. Same **`parity.rc`**
 
 See **`baselines/PARITY_PHASE4C_1.5B.txt`** for a copy-paste checklist.
 
+### Phase 4C — 1.5B on memory-limited Plan 9 / QEMU
+
+**Problem:** Today **`lumen`** expands every GGUF weight to **F32 in RAM** at load (`loader-gguf.c` **`loadf16tensor`** → **`f16tof32`**). For **1.5B** that is ~**6 GB** weights plus a duplicate **~0.9 GB** **`wcls`** copy when embeddings are tied (~**7–8 GB** peak). Observed failures:
+
+| Environment | Symptom |
+|-------------|---------|
+| arm64 QEMU 4 GB | `Killed: Insufficient physical memory` |
+| arm64 QEMU 8–16 GB | `panic: kmapaddr: pa=0x140000000` (kernel mapping ~5 GB physical) |
+| amd64 Plan 9 `cpu` | `mallocz failed` |
+
+**Not fixes:** More QEMU **`-m`** alone (16 GB still panicked); **emulated amd64** QEMU on Apple Silicon (TCG — slow); Q8_0 on disk without keeping quant in RAM.
+
+**HF reference (done on Mac):** **`hello2.tok` pos=1** — `greedy_id=271`, chain **`271, 40, 2776, 4460, 311, 1855, 264, 729`**. Archive with **`PARITY_SAVE=baselines/HF_HELLO2_POS1_1.5B_F16.txt`**.
+
+**Goal:** Load **1.5B F16 GGUF** on **arm64 QEMU (HVF)** with **≤ ~4 GB** steady-state weight RAM, then run the usual **`parity.rc`** ladder.
+
+#### Step M1 — Tied-embed alias (small, do first)
+
+| | |
+|--|--|
+| **Change** | When GGUF has no separate **`output.weight`**, set **`wcls = token_embedding_table`**; skip **`wcls`** alloc and **`memmove`** in **`loader-gguf.c`**. **`free_model`**: do not double-free. |
+| **Files** | **`model.c`**, **`loader-gguf.c`**, maybe **`model.h`** (`wcls_tied` flag) |
+| **Saves** | ~**0.9 GB** (1.5B) |
+| **Pass** | **0.5B** Phases **1–3** unchanged vs existing baselines; **1.5B** smoke may still fail (expected until M2). |
+
+```text
+# After mk install — regression on 0.5B
+gguf=Qwen2.5-0.5B-Instruct-f16.gguf hf='Qwen/Qwen2.5-0.5B-Instruct' tok=hello2.tok pos=1 row=19482 gsteps=8 run=1 rc parity.rc
+```
+
+#### Step M2 — F16 weights in RAM (main win)
+
+| | |
+|--|--|
+| **Change** | Store layer + embed tensors as **F16**; **`matvec` / embed / logits** accumulate in **F32** activations (HF F16 inference story). Loader: **`loadf16tensor`** writes **`ushort`**, no expand-at-load. |
+| **Files** | **`model.h`** (weight pointers or dtype), **`loader-gguf.c`**, **`tensor.c`**, **`transformer.c`**, **`main.c`** (`-Z` embed dump) |
+| **Saves** | ~**50%** on weights → ~**3 GB** for 1.5B (+ M1) |
+| **Pass** | **0.5B** greedy **`gen[]`** still matches HF F16; then **1.5B** smoke below. |
+
+**Parity note:** Layer cksums may move closer to HF **`--dtype float16`**; **`greedy_id` / `gen[]`** remain primary.
+
+#### Step M3 — 1.5B parity on Plan 9 (after M1+M2)
+
+```text
+# Smoke (expect dim=1536 layers=28, lumen_dump line)
+lumen -v -m Qwen2.5-1.5B-Instruct-f16.gguf -Z 19482 -n 0
+
+# Ladder
+gguf=Qwen2.5-1.5B-Instruct-f16.gguf hf='Qwen/Qwen2.5-1.5B-Instruct' tok=hello2.tok pos=1 row=19482 gsteps=8 run=1 rc parity.rc
+```
+
+| Check | 1.5B target (HF F16, Mac) |
+|-------|---------------------------|
+| **`lumen_dump`** first_16 | see **`host_parity.sh`** embed row for **19482** |
+| **`greedy_id`** | **271** |
+| **`gen[0..7]`** | **271, 40, 2776, 4460, 311, 1855, 264, 729** |
+
+**QEMU:** **8192 MB** VM should suffice after M2; retest on **gabriel** (arm64 HVF). Optional **`ctx=128`** for later **kv64** on 1.5B.
+
+#### Deferred (not in this mini-plan)
+
+- Q8_0 / Q4_0 **in RAM** (needs quant matmul path; disk quant alone does not cut RAM today).
+- **3B+** checkpoints (scale M2; still need headroom).
+- Plan 9 **kernel** highmem / **`kmapaddr`** fix upstream (orthogonal to M1/M2).
+
 ## Current status (checkpoint)
 
 **Qwen2.5-0.5B-Instruct, F16 GGUF, `hello2.tok` pos=1:** Phases **0–3** done — ladder passes for **embed**, **greedy next token**, and **8-step greedy chain** vs HF; layer checksums vs HF float16 are approximate.
@@ -108,13 +173,15 @@ See **`baselines/PARITY_PHASE4C_1.5B.txt`** for a copy-paste checklist.
 
 **Phase 4B (Q8_0):** **`hello2`** — full greedy parity vs HF F16 ✓. **`kv64`** — **`gen[0]`** vs HF F16 ✓; **multi-step greedy vs HF F16** ✗ (documented above). Optional: **`Q4_0`**, **llama.cpp vs lumen** on **`kv64`**, **`PARITY_SAVE`** baselines.
 
-**Next:** **Phase 4C** — start with **`Qwen/Qwen2.5-1.5B-Instruct`** (see Phase 4C + **`baselines/PARITY_PHASE4C_1.5B.txt`**). Phase 4B optional follow-ups: **`Q4_0`**, llama.cpp vs lumen on **`kv64` Q8_0.
+**Phase 4C (1.5B):** HF ladder on **Mac** ✓ (`greedy_id=271`, chain **`271,40,2776,4460,311,1855,264,729`**). **Plan 9 lumen** blocked on RAM — see **Phase 4C — 1.5B on memory-limited Plan 9 / QEMU** (steps **M1 → M2 → M3**). **0.5B** remains the live Plan 9 parity target until M2 lands.
+
+**Next:** Implement **M1** (tied embed), then **M2** (F16 in RAM), rerun **M3** on gabriel. Phase 4B optional: **`Q4_0`**, llama.cpp vs lumen on **`kv64` Q8_0**.
 
 ### `parity.rc` / rc gotchas
 
 - **`lm=-W -m $gguf`** assigns only **`-W`** to `lm`; **`-m`** is then run as a command (errors like **`./-m`**).
 - **`lm=(-W -m $gguf)`** is not reliable on all **`rc`** builds.
-- **`parity.rc`** uses **`usectx`** and two explicit lines: **`$bin -W -m $gguf -c $ctx …`** vs **`$bin -W -m $gguf …`**.
+- **`parity.rc`** uses **`usectx`** and **`>$tmp >[2=1]`** (rc redirect order matters; see **`l0parity.rc`**). **`lumen -W`** still works by hand but **`run=1`** path prefers rc merge.
 - If **`lumen`** shows **vocab 256** and **`hello2.tok`** ids are “out of range”, **`-m $gguf` never reached** the binary (wrong rc words) or **`gguf`** is unreadable / missing from cwd.
 
 ## Quick commands

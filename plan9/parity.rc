@@ -32,30 +32,41 @@ cfrag=''
 if(! ~ $#ctx 0) if(! ~ $ctx '')
 	cfrag=' -c '^$ctx
 
-# lumen path:  lumenbin=...  to override; else ./lumen, ./6.out, $home/bin/$objtype/lumen, then $path/…/lumen (finds /usr/william/bin/amd64/lumen etc.)
+# lumen path:  lumenbin=...  to override; else ./lumen, ./6.out, $home/bin/$objtype/lumen, which lumen, $path/…/lumen.
+# Use ~ $bin ?* for "found" — rc $#bin is unreliable on bin='' (empty command → "empty file name").
 bin=''
 if(! ~ $#lumenbin 0)
 	bin=$lumenbin
 if(~ $#lumenbin 0) if(test -f ./lumen -a -x ./lumen) bin=./lumen
-if(~ $#lumenbin 0) if(~ $#bin 0) if(test -f ./6.out -a -x ./6.out) bin=./6.out
-if(~ $#lumenbin 0) if(~ $#bin 0) if(! ~ $#objtype 0) {
+if(~ $#lumenbin 0) if(! ~ $bin ?*) if(test -f ./6.out -a -x ./6.out) bin=./6.out
+if(~ $#lumenbin 0) if(! ~ $bin ?*) if(! ~ $#objtype 0) {
 	lu=$home^'/bin/'^$objtype^'/lumen'
 	if(test -f $lu -a -x $lu) bin=$lu
 }
-if(~ $#lumenbin 0) if(~ $#bin 0) if(! ~ $#cputype 0) {
+if(~ $#lumenbin 0) if(! ~ $bin ?*) if(! ~ $#cputype 0) {
 	lu=$home^'/bin/'^$cputype^'/lumen'
 	if(test -f $lu -a -x $lu) bin=$lu
 }
-if(~ $#lumenbin 0) if(~ $#bin 0) for(p in $path) {
-	if(~ $#bin 0) {
+if(~ $#lumenbin 0) if(! ~ $bin ?*) for(p in $path) {
+	if(! ~ $bin ?*) {
 		lu=$p^/lumen
 		if(test -f $lu -a -x $lu) bin=$lu
 	}
 }
+if(~ $#lumenbin 0) if(! ~ $bin ?*) {
+	wl=`{which lumen}
+	if(~ $wl ?*)
+		bin=$wl
+}
 if(! ~ $#lumenbin 0) {
 	if(! test -f $bin -a -x $bin) {
-		echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
-		bin=''
+		wl=`{which $bin}
+		if(~ $wl ?*)
+			bin=$wl
+		if not {
+			echo '[parity] lumenbin is not a file or not executable: '^$lumenbin
+			bin=''
+		}
 	}
 }
 
@@ -67,8 +78,8 @@ if(~ $run 1) {
 	# Grep into a second file, then test -s; direct grep|stdout can be a no-op on some rc.
 	gout=/tmp/parity^$ps^'.gout'
 	skip=0
-	if(~ $#bin 0) {
-		echo '[parity] no lumen: run  mk  or  mk install  in plan9/ (or  lumenbin=/path/to/lumen  before rc)'
+	if(! ~ $bin ?*) {
+		echo '[parity] no lumen: run  mk  or  mk install  in plan9/ (or  lumenbin=lumen  /  lumenbin=/path/to/lumen  before rc)'
 		skip=1
 	}
 	if(! test -r $gguf) {

@@ -1,0 +1,25 @@
+1.5B on Plan 9 / QEMU — memory plan (M1 → M2 → M3). Full write-up: PARITY_PLAN.md § Phase 4C memory.
+
+Why blocked today
+  lumen loads all weights as F32 (~6 GB) + duplicate tied wcls (~0.9 GB) ≈ 7–8 GB peak.
+  gabriel 4G: Killed. gabriel 8–16G: kmapaddr panic. cpu amd64: mallocz failed.
+
+HF reference (Mac — done)
+  ./scripts/host_parity.sh Qwen/Qwen2.5-1.5B-Instruct hello2.tok 1 19482 8
+  greedy_id=271
+  gen[]: 271, 40, 2776, 4460, 311, 1855, 264, 729
+
+M1 — tied-embed alias (~0.9 GB saved)
+  wcls → token_embedding_table when output.weight absent; fix free_model.
+  Regression: 0.5B parity.rc ladder must still pass.
+
+M2 — F16 weights in RAM (~3 GB saved for 1.5B)
+  Keep ushort weights; F32 matvec accumulators; loader stops expand-at-load.
+  Regression: 0.5B greedy gen[] vs HF F16.
+
+M3 — 1.5B on gabriel (arm64 QEMU, 8G VM after M2)
+  lumen -v -m Qwen2.5-1.5B-Instruct-f16.gguf -Z 19482 -n 0
+  gguf=Qwen2.5-1.5B-Instruct-f16.gguf hf='Qwen/Qwen2.5-1.5B-Instruct' tok=hello2.tok pos=1 row=19482 gsteps=8 run=1 rc parity.rc
+  Match lumen_dump, greedy_id=271, gen[] to HF table above.
+
+Not in scope: Q8 on disk only, emulated amd64 QEMU, more -m without M2.
