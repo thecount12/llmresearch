@@ -1,0 +1,42 @@
+
+Why this is a perfect sandbox for you
+
+1. Zero Baggage: No external AI libraries, headers, or runtime configuration needed. Just standard C memory allocations.
+2. Highly Extendable: Want to try out a revolutionary new activation function or a different way of passing weights? You just need to write a simple for loop mapping over the t->data array.
+3. Lux-Ready: Because the functions take simple pointers and primitive integer dimensions, wrapping this file into a native Lux module down the line will be incredibly straightforward.
+If you'd like to dive into the next phase, let me know if you want to write an activation layer (like ReLU or a custom formula) or look into how you can layer a bias vector addition onto this structure!
+
+
+Results:
+
+./tensor_test 
+--- Tensor: A (2x3) ---
+  2.00   2.00   2.00 
+  2.00   2.00   2.00 
+
+--- Tensor: B (3x2) ---
+  3.00   3.00 
+  3.00   3.00 
+  3.00   3.00 
+
+--- Tensor: Result C (A * B) (2x2) ---
+ 18.00  18.00 
+ 18.00  18.00
+
+
+
+That is exactly what we want to see! The math checks out perfectly. (2 × 3) multiplied by (3 × 2) gives a (2 × 2) matrix, and each cell is (2*3) + (2*3) + (2*3) = 18.
+You now have a verified, functional, zero-dependency tensor multiplication engine compiling and executing natively on your M4 Pro. This is the exact core mechanic that powers every transformer and neural network on earth—except you own every single line of this one.
+Now that the absolute fundamentals are working, you are in a great position to start experimenting with the "better tensor-like algorithms" you mentioned earlier.
+When you look at modern AI architectures, they are mostly built out of three simple operations layered on top of this matrix multiplication:
+1. Element-wise operations (like adding a bias vector to every row or applying a ReLU activation).
+2. Reductions (like finding the maximum value in a row or summing them up for a Softmax).
+3. Reshaping (viewing the exact same contiguous memory array with different row/col dimensions without copying data).
+If you want to keep pushing this forward right now, what sounds like the most fun next step?
+• We can implement Bias Addition, which will let you add a shifting vector to your output matrix.
+• We can build a Random Initialization function using standard C random utilities to fill your tensors with weights instead of flat 2.0 and 3.0 constants.
+• We can look at how to structure a Lux extension wrapper around these C files so you can run this exact execution from your custom scripting engine.
+
+
+
+
